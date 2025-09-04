@@ -7,9 +7,21 @@ from pathlib import Path
 from datetime import datetime
 import random
 import subprocess
+import requests
 
 import openai
 import ai2thor.controller
+
+# LLM provider imports
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 
 import sys
 sys.path.append(".")
@@ -18,30 +30,127 @@ import resources.actions as actions
 import resources.robots as robots
 
 
-def LM(prompt, gpt_version, max_tokens=128, temperature=0, stop=None, logprobs=1, frequency_penalty=0):
+def LM(prompt, model_name, max_tokens=128, temperature=0, stop=None, logprobs=1, frequency_penalty=0):
     
-    if "gpt" not in gpt_version:
-        response = openai.Completion.create(model=gpt_version, 
-                                            prompt=prompt, 
-                                            max_tokens=max_tokens, 
-                                            temperature=temperature, 
-                                            stop=stop, 
-                                            logprobs=logprobs, 
-                                            frequency_penalty = frequency_penalty)
+    # OpenAI GPT models
+    if "gpt" in model_name.lower():
+        if "gpt" not in model_name:
+            response = openai.Completion.create(model=model_name, 
+                                                prompt=prompt, 
+                                                max_tokens=max_tokens, 
+                                                temperature=temperature, 
+                                                stop=stop, 
+                                                logprobs=logprobs, 
+                                                frequency_penalty = frequency_penalty)
+            return response, response["choices"][0]["text"].strip()
+        else:
+            response = openai.ChatCompletion.create(model=model_name, 
+                                                messages=prompt, 
+                                                max_tokens=max_tokens, 
+                                                temperature=temperature, 
+                                                frequency_penalty = frequency_penalty)
+            return response, response["choices"][0]["message"]["content"].strip()
+    
+    # Claude (Anthropic)
+    elif "claude" in model_name.lower():
+        if anthropic is None:
+            raise ImportError("anthropic package is required for Claude models")
         
-        return response, response["choices"][0]["text"].strip()
+        client = anthropic.Anthropic(api_key=anthropic_api_key)
+        
+        if isinstance(prompt, list):
+            # Chat format
+            messages = prompt
+        else:
+            # Single prompt format
+            messages = [{"role": "user", "content": prompt}]
+        
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            messages=messages
+        )
+        return response, response.content[0].text.strip()
+    
+    # Gemini (Google)
+    elif "gemini" in model_name.lower():
+        if genai is None:
+            raise ImportError("google-generativeai package is required for Gemini models")
+        
+        genai.configure(api_key=gemini_api_key)
+        model = genai.GenerativeModel(model_name)
+        
+        if isinstance(prompt, list):
+            # Convert chat format to text
+            text_prompt = ""
+            for msg in prompt:
+                if msg["role"] == "user":
+                    text_prompt += f"User: {msg['content']}\n"
+                elif msg["role"] == "system":
+                    text_prompt += f"System: {msg['content']}\n"
+        else:
+            text_prompt = prompt
+        
+        response = model.generate_content(
+            text_prompt,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=temperature
+            )
+        )
+        return response, response.text.strip()
+    
+    # Ollama (Local)
+    elif "ollama" in model_name.lower():
+        model = model_name.replace("ollama:", "")
+        url = "http://localhost:11434/api/generate"
+        
+        if isinstance(prompt, list):
+            # Convert chat format to text
+            text_prompt = ""
+            for msg in prompt:
+                if msg["role"] == "user":
+                    text_prompt += f"User: {msg['content']}\n"
+                elif msg["role"] == "system":
+                    text_prompt += f"System: {msg['content']}\n"
+        else:
+            text_prompt = prompt
+        
+        payload = {
+            "model": model,
+            "prompt": text_prompt,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens
+            }
+        }
+        
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        result = response.json()
+        return result, result["response"].strip()
     
     else:
-        response = openai.ChatCompletion.create(model=gpt_version, 
-                                            messages=prompt, 
-                                            max_tokens=max_tokens, 
-                                            temperature=temperature, 
-                                            frequency_penalty = frequency_penalty)
-        
-        return response, response["choices"][0]["message"]["content"].strip()
+        raise ValueError(f"Unsupported model: {model_name}")
 
-def set_api_key(openai_api_key):
-    openai.api_key = Path(openai_api_key + '.txt').read_text()
+def set_api_keys(api_key_file):
+    global anthropic_api_key, gemini_api_key
+    
+    # Set OpenAI API key
+    openai.api_key = Path(api_key_file + '.txt').read_text()
+    
+    # Try to read other API keys if they exist
+    try:
+        anthropic_api_key = Path(api_key_file + '_anthropic.txt').read_text().strip()
+    except FileNotFoundError:
+        anthropic_api_key = None
+    
+    try:
+        gemini_api_key = Path(api_key_file + '_gemini.txt').read_text().strip()
+    except FileNotFoundError:
+        gemini_api_key = None
 
 # Function returns object list with name and properties.
 def convert_to_dict_objprop(objs, obj_mass):
@@ -65,8 +174,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--floor-plan", type=int, required=True)
     parser.add_argument("--openai-api-key-file", type=str, default="api_key")
-    parser.add_argument("--gpt-version", type=str, default="gpt-4", 
-                        choices=['gpt-3.5-turbo', 'gpt-4', 'gpt-3.5-turbo-16k'])
+    parser.add_argument("--model", type=str, default="gpt-3.5-turbo", 
+                        choices=[
+                            # OpenAI models
+                            'gpt-3.5-turbo', 'gpt-4', 'gpt-3.5-turbo-16k', 'gpt-4-turbo',
+                            # Claude models
+                            'claude-3-haiku-20240307', 'claude-3-sonnet-20240229', 'claude-3-opus-20240229',
+                            # Gemini models
+                            'gemini-pro', 'gemini-pro-vision',
+                            # Ollama models (local)
+                            'ollama:llama2', 'ollama:llama3', 'ollama:tinyllama', 'ollama:codellama', 'ollama:mistral', 'ollama:phi'
+                        ])
     
     parser.add_argument("--prompt-decompse-set", type=str, default="train_task_decompose", 
                         choices=['train_task_decompose'])
@@ -81,7 +199,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    set_api_key(args.openai_api_key_file)
+    set_api_keys(args.openai_api_key_file)
     
     if not os.path.isdir(f"./logs/"):
         os.makedirs(f"./logs/")
@@ -135,12 +253,12 @@ if __name__ == "__main__":
     for task in test_tasks:
         curr_prompt =  f"{prompt}\n\n# Task Description: {task}"
         
-        if "gpt" not in args.gpt_version:
+        if "gpt" not in args.model:
             # older gpt versions
-            _, text = LM(curr_prompt, args.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.15)
+            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.15)
         else:            
             messages = [{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages,args.gpt_version, max_tokens=1300, frequency_penalty=0.0)
+            _, text = LM(messages, args.model, max_tokens=1300, frequency_penalty=0.0)
 
         decomposed_plan.append(text)
         
@@ -169,19 +287,19 @@ if __name__ == "__main__":
         curr_prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availablitiy. "
         curr_prompt += f"\n# SOLUTION  \n"
 
-        if "gpt" not in args.gpt_version:
+        if "gpt" not in args.model:
             # older versions of GPT
-            _, text = LM(curr_prompt, args.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.65)
+            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.65)
         
-        elif "gpt-3.5" in args.gpt_version:
+        elif "gpt-3.5" in args.model:
             # gpt 3.5 and its variants
             messages = [{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.gpt_version, max_tokens=1500, frequency_penalty=0.35)
+            _, text = LM(messages, args.model, max_tokens=1500, frequency_penalty=0.35)
         
         else:          
-            # gpt 4.0
+            # gpt 4.0 and other models
             messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert. Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both based on your reasoning. In the case of Task Allocation based on Robot Skills alone - First check if robot teams are required. Then Ensure that robot skills or robot team skills match the required skills for the subtask when allocating. Make sure that condition is met. In the case of Task Allocation based on Mass alone - First check if robot teams are required. Then Ensure that robot mass capacity or robot team combined mass capacity is greater than or equal to the mass for the object when allocating. Make sure that condition is met. In both the Task Task Allocation based on Mass alone and Task Allocation based on Skill alone, if there are multiple options for allocation, pick the best available option by reasoning to the best of your ability."},{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.gpt_version, max_tokens=400, frequency_penalty=0.69)
+            _, text = LM(messages, args.model, max_tokens=400, frequency_penalty=0.69)
 
         allocated_plan.append(text)
     
@@ -210,13 +328,13 @@ if __name__ == "__main__":
         curr_prompt += solution
         curr_prompt += f"\n# CODE Solution  \n"
         
-        if "gpt" not in args.gpt_version:
+        if "gpt" not in args.model:
             # older versions of GPT
-            _, text = LM(curr_prompt, args.gpt_version, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
+            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
         else:            
             # using variants of gpt 4 or 3.5
             messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.gpt_version, max_tokens=1400, frequency_penalty=0.4)
+            _, text = LM(messages, args.model, max_tokens=1400, frequency_penalty=0.4)
 
         code_plan.append(text)
     
@@ -237,7 +355,7 @@ if __name__ == "__main__":
      
             with open(f"./logs/{folder_name}/log.txt", 'w') as f:
                 f.write(task)
-                f.write(f"\n\nGPT Version: {args.gpt_version}")
+                f.write(f"\n\nModel: {args.model}")
                 f.write(f"\n\nFloor Plan: {args.floor_plan}")
                 f.write(f"\n{objects_ai}")
                 f.write(f"\nrobots = {available_robots[idx]}")

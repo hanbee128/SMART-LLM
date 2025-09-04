@@ -86,19 +86,64 @@ conda create -n smartllm python==3.9
 pip install -r requirments.txt
 ```
 
-## OpenAI API 키 생성
-코드는 OpenAI API에 의존합니다. https://platform.openai.com/에서 API 키를 생성하세요.
+## API 키 설정
+코드는 여러 LLM을 지원합니다. 사용하려는 LLM에 따라 해당 API 키를 설정하세요.
 
-프로젝트의 루트 폴더에 ```api_key.txt```라는 파일을 생성하고 파일에 OpenAI 키를 붙여넣으세요.
+### OpenAI (기본)
+https://platform.openai.com/에서 API 키를 생성하고 `api_key.txt` 파일에 저장하세요.
+
+### Claude (Anthropic)
+https://console.anthropic.com/에서 API 키를 생성하고 `api_key_anthropic.txt` 파일에 저장하세요.
+
+### Gemini (Google)
+https://makersuite.google.com/app/apikey에서 API 키를 생성하고 `api_key_gemini.txt` 파일에 저장하세요.
+
+### Ollama (로컬)
+Ollama를 설치하고 원하는 모델을 다운로드하세요:
+```bash
+# Ollama 설치 (Linux/Mac)
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# 모델 다운로드 예시
+ollama pull llama2
+ollama pull llama3
+ollama pull tinyllama
+ollama pull codellama
+ollama pull mistral
+```
 
 ## 스크립트 실행
 주어진 AI2Thor 플로어 플랜에서 작업을 수행하기 위한 실행 가능한 파이썬 스크립트를 생성하려면 다음 명령어를 실행하세요.
 
 다양한 AI2Thor 플로어 플랜의 레이아웃은 https://ai2thor.allenai.org/demo를 참조하세요.
 ```
-python3 scripts/run_llm.py --floor-plan {floor_plan_no}
+python3 scripts/run_llm.py --floor-plan {floor_plan_no} --model {model_name}
 ```
-참고: 다양한 GPT 모델 버전에서 실행하고 테스트 데이터셋을 변경하는 방법은 스크립트를 참조하세요.
+
+### 지원되는 모델:
+- **OpenAI**: `gpt-3.5-turbo`, `gpt-4`, `gpt-3.5-turbo-16k`, `gpt-4-turbo`
+- **Claude**: `claude-3-haiku-20240307`, `claude-3-sonnet-20240229`, `claude-3-opus-20240229`
+- **Gemini**: `gemini-pro`, `gemini-pro-vision`
+- **Ollama**: `ollama:llama2`, `ollama:llama3`, `ollama:tinyllama`, `ollama:codellama`, `ollama:mistral`, `ollama:phi`
+
+### 사용 예시:
+```bash
+# OpenAI GPT-4 사용
+python3 scripts/run_llm.py --floor-plan 6 --model gpt-4
+
+# Claude 사용
+python3 scripts/run_llm.py --floor-plan 6 --model claude-3-sonnet-20240229
+
+# Gemini 사용
+python3 scripts/run_llm.py --floor-plan 6 --model gemini-pro
+
+# Ollama 로컬 모델 사용
+python3 scripts/run_llm.py --floor-plan 6 --model ollama:llama2
+python3 scripts/run_llm.py --floor-plan 6 --model ollama:llama3
+python3 scripts/run_llm.py --floor-plan 6 --model ollama:tinyllama
+```
+
+참고: 다양한 모델에서 실행하고 테스트 데이터셋을 변경하는 방법은 스크립트를 참조하세요.
 
 위 스크립트는 실행 가능한 코드를 생성하고 ```logs``` 폴더에 저장해야 합니다.
 

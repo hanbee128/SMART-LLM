@@ -1,3 +1,6 @@
-openai
+openai==0.28
 ai2thor
 scipy
+anthropic
+google-generativeai
+requests
