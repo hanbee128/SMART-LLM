@@ -9,7 +9,11 @@ task_over = True
 time.sleep(5)
 
 
-exec = float(success_exec) / float(total_exec)
+if total_exec > 0:
+    exec = float(success_exec) / float(total_exec)
+else:
+    exec = 0.0
+    print("Warning: No actions were executed (total_exec = 0)")
 
 print (ground_truth)
 objs = list([obj for obj in c.last_event.metadata["objects"]])

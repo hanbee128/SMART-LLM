@@ -34,15 +34,29 @@ def generate_video(input_path, prefix, char_id=0, image_synthesis=['normal'], fr
     vid_folder = '{}/{}/{}/'.format(input_path, prefix, char_id)
     if not os.path.isdir(vid_folder):
         print("The input path: {} you specified does not exist.".format(input_path))
-    else:
-        for vid_mod in image_synthesis:
+        return
+    
+    # ffmpeg가 설치되어 있는지 확인
+    try:
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("Warning: ffmpeg is not installed or not available. Skipping video generation.")
+        return
+    
+    for vid_mod in image_synthesis:
+        try:
             command_set = ['ffmpeg', '-i',
                              '{}/Action_%04d_0_{}.png'.format(vid_folder, vid_mod), 
                              '-framerate', str(frame_rate),
                              '-pix_fmt', 'yuv420p',
                              '{}/video_{}.mp4'.format(output_path, vid_mod)]
-            subprocess.call(command_set)
-            print("Video generated at ", '{}/video_{}.mp4'.format(output_path, vid_mod))
+            result = subprocess.run(command_set, capture_output=True, text=True)
+            if result.returncode == 0:
+                print("Video generated at ", '{}/video_{}.mp4'.format(output_path, vid_mod))
+            else:
+                print(f"Warning: Failed to generate video for {vid_mod}. Error: {result.stderr}")
+        except Exception as e:
+            print(f"Error generating video for {vid_mod}: {str(e)}")
 
 robots = [{'name': 'robot1', 'skills': ['GoToObject', 'OpenObject', 'CloseObject', 'BreakObject', 'SliceObject', 'SwitchOn', 'SwitchOff', 'PickupObject', 'PutObject', 'DropHandObject', 'ThrowObject', 'PushObject', 'PullObject']}, 
           {'name': 'robot2', 'skills': ['GoToObject', 'OpenObject', 'CloseObject', 'BreakObject', 'SliceObject', 'SwitchOn', 'SwitchOff', 'PickupObject', 'PutObject', 'DropHandObject', 'ThrowObject', 'PushObject', 'PullObject']}]

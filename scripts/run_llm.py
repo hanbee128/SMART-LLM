@@ -185,6 +185,86 @@ def set_api_key_for_model(model_name, api_key):
     elif "ollama" in model_name.lower():
         pass  # Ollama는 로컬이므로 API 키 불필요
 
+def clean_generated_code(code):
+    """생성된 코드에서 마크다운 블록과 불필요한 텍스트를 제거합니다."""
+    import re
+    
+    # 마크다운 코드 블록 제거
+    code = re.sub(r'```python\s*', '', code)
+    code = re.sub(r'```\s*$', '', code)
+    code = re.sub(r'```.*?\n', '', code, flags=re.DOTALL)
+    
+    # 설명 텍스트 제거 (코드가 아닌 부분)
+    lines = code.split('\n')
+    cleaned_lines = []
+    in_code_block = False
+    
+    for line in lines:
+        original_line = line
+        line = line.strip()
+        
+        # 코드 블록 시작 감지
+        if line.startswith('def ') or line.startswith('import ') or line.startswith('from '):
+            in_code_block = True
+        
+        # 코드 블록 내부이거나 실제 코드인 경우만 유지
+        if in_code_block or line.startswith(('def ', 'import ', 'from ', 'class ', '    ', '\t', '#', 'if ', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ', 'return ', 'yield ', 'global ', 'nonlocal ')):
+            cleaned_lines.append(original_line)
+        elif line == '':
+            cleaned_lines.append(original_line)  # 빈 줄은 유지
+        elif line.startswith(('```', '**', '*', '- ')) and not in_code_block:
+            continue  # 마크다운 문법 제거
+        elif in_code_block:
+            cleaned_lines.append(original_line)
+    
+    # 빈 줄 정리
+    result = '\n'.join(cleaned_lines)
+    result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)  # 연속된 빈 줄 제거
+    
+    # 추가 정리: 불완전한 문자열 리터럴 제거
+    lines = result.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        # 불완전한 문자열 리터럴이 있는 줄 제거
+        if line.count("'") % 2 != 0 and not line.strip().startswith('#'):
+            continue
+        if line.count('"') % 2 != 0 and not line.strip().startswith('#'):
+            continue
+        cleaned_lines.append(line)
+    
+    result = '\n'.join(cleaned_lines)
+    
+    # 설명 텍스트 완전 제거 (영어 문장으로 시작하는 줄들)
+    lines = result.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        line_stripped = line.strip()
+        # 영어 문장으로 시작하는 설명 텍스트 제거
+        if (line_stripped and 
+            not line_stripped.startswith(('def ', 'import ', 'from ', 'class ', '#', '    ', '\t', 'if ', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ', 'return ', 'yield ', 'global ', 'nonlocal ', 'GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 'SwitchOn', 'SwitchOff', 'ThrowObject', 'BreakObject', 'SliceObject', 'CleanObject', 'DropHandObject', 'PushObject', 'PullObject')) and
+            not line_stripped.startswith(('robots', 'objects', 'def ', 'import ', 'from ')) and
+            (line_stripped[0].isupper() or line_stripped.startswith('This ') or line_stripped.startswith('The ') or line_stripped.startswith('Overall ') or line_stripped.startswith('The code solution') or line_stripped.startswith('This code solution'))):
+            continue
+        cleaned_lines.append(line)
+    
+    # 마지막으로 함수 정의가 아닌 모든 설명 텍스트 제거
+    final_lines = []
+    for line in cleaned_lines:
+        line_stripped = line.strip()
+        # 함수 정의, import, 주석, 빈 줄, 함수 호출이 아닌 모든 줄 제거
+        if (not line_stripped or 
+            line_stripped.startswith(('def ', 'import ', 'from ', 'class ', '#', '    ', '\t')) or
+            line_stripped.startswith(('GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 'SwitchOn', 'SwitchOff', 'ThrowObject', 'BreakObject', 'SliceObject', 'CleanObject', 'DropHandObject', 'PushObject', 'PullObject')) or
+            line_stripped.startswith(('robots', 'objects', 'if ', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ', 'return ', 'yield ', 'global ', 'nonlocal ')) or
+            # 함수 호출 패턴 추가
+            (line_stripped and not line_stripped[0].isupper() and 
+             ('(' in line_stripped and ')' in line_stripped and 
+              any(func in line_stripped for func in ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 'SwitchOn', 'SwitchOff', 'ThrowObject', 'BreakObject', 'SliceObject', 'CleanObject', 'DropHandObject', 'PushObject', 'PullObject'])))):
+            final_lines.append(line)
+        # 그 외의 모든 설명 텍스트는 제거
+    
+    return '\n'.join(final_lines)
+
 # Function returns object list with name and properties.
 def convert_to_dict_objprop(objs, obj_mass):
     objs_dict = []
@@ -245,11 +325,19 @@ if __name__ == "__main__":
     max_trans_cnt_tasks = []  
     with open (f"./data/{args.test_set}/FloorPlan{args.floor_plan}.json", "r") as f:
         for line in f.readlines():
-            test_tasks.append(list(json.loads(line).values())[0])
-            robots_test_tasks.append(list(json.loads(line).values())[1])
-            gt_test_tasks.append(list(json.loads(line).values())[2])
-            trans_cnt_tasks.append(list(json.loads(line).values())[3])
-            max_trans_cnt_tasks.append(list(json.loads(line).values())[4])
+            line = line.strip()
+            if line:  # 빈 줄이 아닌 경우만 처리
+                try:
+                    data = json.loads(line)
+                    test_tasks.append(list(data.values())[0])
+                    robots_test_tasks.append(list(data.values())[1])
+                    gt_test_tasks.append(list(data.values())[2])
+                    trans_cnt_tasks.append(list(data.values())[3])
+                    max_trans_cnt_tasks.append(list(data.values())[4])
+                except json.JSONDecodeError as e:
+                    print(f"JSON 파싱 오류: {e}")
+                    print(f"문제가 있는 줄: {line}")
+                    continue
                     
     print(f"\n----Test set tasks----\n{test_tasks}\nTotal: {len(test_tasks)} tasks\n")
     # prepare list of robots for the tasks
@@ -293,7 +381,9 @@ if __name__ == "__main__":
             messages = [{"role": "user", "content": curr_prompt}]
             _, text = LM(messages, args.model, max_tokens=1300, frequency_penalty=0.0)
 
-        decomposed_plan.append(text)
+        # 코드 후처리 적용
+        cleaned_text = clean_generated_code(text)
+        decomposed_plan.append(cleaned_text)
         
     print ("2단계: Generating Allocation Solution...")
 
@@ -334,7 +424,9 @@ if __name__ == "__main__":
             messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert. Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both based on your reasoning. In the case of Task Allocation based on Robot Skills alone - First check if robot teams are required. Then Ensure that robot skills or robot team skills match the required skills for the subtask when allocating. Make sure that condition is met. In the case of Task Allocation based on Mass alone - First check if robot teams are required. Then Ensure that robot mass capacity or robot team combined mass capacity is greater than or equal to the mass for the object when allocating. Make sure that condition is met. In both the Task Task Allocation based on Mass alone and Task Allocation based on Skill alone, if there are multiple options for allocation, pick the best available option by reasoning to the best of your ability."},{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
             _, text = LM(messages, args.model, max_tokens=400, frequency_penalty=0.69)
 
-        allocated_plan.append(text)
+        # 코드 후처리 적용
+        cleaned_text = clean_generated_code(text)
+        allocated_plan.append(cleaned_text)
     
     print ("3단계: Generating Allocated Code...")
     
@@ -369,7 +461,9 @@ if __name__ == "__main__":
             messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
             _, text = LM(messages, args.model, max_tokens=1400, frequency_penalty=0.4)
 
-        code_plan.append(text)
+        # 코드 후처리 적용
+        cleaned_text = clean_generated_code(text)
+        code_plan.append(cleaned_text)
     
     # save generated plan
     exec_folders = []

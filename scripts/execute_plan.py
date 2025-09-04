@@ -8,7 +8,7 @@ def append_trans_ctr(allocated_plan):
     code_segs = allocated_plan.split("\n\n")
     fn_calls = []
     for cd in code_segs:
-        if "def" not in cd and "threading.Thread" not in cd and "join" not in cd and cd[-1] == ")":
+        if cd and "def" not in cd and "threading.Thread" not in cd and "join" not in cd and cd[-1] == ")":
             # fn_calls.append(cd)
             brk_ctr += 1
     print ("No Breaks: ", brk_ctr)
