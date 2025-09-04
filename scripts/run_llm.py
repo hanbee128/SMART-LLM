@@ -194,76 +194,34 @@ def clean_generated_code(code):
     code = re.sub(r'```\s*$', '', code)
     code = re.sub(r'```.*?\n', '', code, flags=re.DOTALL)
     
-    # 설명 텍스트 제거 (코드가 아닌 부분)
+    # AI2Thor 액션 함수들
+    ai2thor_functions = ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 
+                        'SwitchOn', 'SwitchOff', 'SliceObject', 'CleanObject', 'ThrowObject', 
+                        'BreakObject', 'DropHandObject', 'PushObject', 'PullObject']
+    
     lines = code.split('\n')
     cleaned_lines = []
-    in_code_block = False
     
-    for line in lines:
-        original_line = line
-        line = line.strip()
-        
-        # 코드 블록 시작 감지
-        if line.startswith('def ') or line.startswith('import ') or line.startswith('from '):
-            in_code_block = True
-        
-        # 코드 블록 내부이거나 실제 코드인 경우만 유지
-        if in_code_block or line.startswith(('def ', 'import ', 'from ', 'class ', '    ', '\t', '#', 'if ', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ', 'return ', 'yield ', 'global ', 'nonlocal ')):
-            cleaned_lines.append(original_line)
-        elif line == '':
-            cleaned_lines.append(original_line)  # 빈 줄은 유지
-        elif line.startswith(('```', '**', '*', '- ')) and not in_code_block:
-            continue  # 마크다운 문법 제거
-        elif in_code_block:
-            cleaned_lines.append(original_line)
-    
-    # 빈 줄 정리
-    result = '\n'.join(cleaned_lines)
-    result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)  # 연속된 빈 줄 제거
-    
-    # 추가 정리: 불완전한 문자열 리터럴 제거
-    lines = result.split('\n')
-    cleaned_lines = []
-    for line in lines:
-        # 불완전한 문자열 리터럴이 있는 줄 제거
-        if line.count("'") % 2 != 0 and not line.strip().startswith('#'):
-            continue
-        if line.count('"') % 2 != 0 and not line.strip().startswith('#'):
-            continue
-        cleaned_lines.append(line)
-    
-    result = '\n'.join(cleaned_lines)
-    
-    # 설명 텍스트 완전 제거 (영어 문장으로 시작하는 줄들)
-    lines = result.split('\n')
-    cleaned_lines = []
     for line in lines:
         line_stripped = line.strip()
-        # 영어 문장으로 시작하는 설명 텍스트 제거
-        if (line_stripped and 
-            not line_stripped.startswith(('def ', 'import ', 'from ', 'class ', '#', '    ', '\t', 'if ', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ', 'return ', 'yield ', 'global ', 'nonlocal ', 'GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 'SwitchOn', 'SwitchOff', 'ThrowObject', 'BreakObject', 'SliceObject', 'CleanObject', 'DropHandObject', 'PushObject', 'PullObject')) and
-            not line_stripped.startswith(('robots', 'objects', 'def ', 'import ', 'from ')) and
-            (line_stripped[0].isupper() or line_stripped.startswith('This ') or line_stripped.startswith('The ') or line_stripped.startswith('Overall ') or line_stripped.startswith('The code solution') or line_stripped.startswith('This code solution'))):
-            continue
-        cleaned_lines.append(line)
-    
-    # 마지막으로 함수 정의가 아닌 모든 설명 텍스트 제거
-    final_lines = []
-    for line in cleaned_lines:
-        line_stripped = line.strip()
-        # 함수 정의, import, 주석, 빈 줄, 함수 호출이 아닌 모든 줄 제거
-        if (not line_stripped or 
-            line_stripped.startswith(('def ', 'import ', 'from ', 'class ', '#', '    ', '\t')) or
-            line_stripped.startswith(('GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 'SwitchOn', 'SwitchOff', 'ThrowObject', 'BreakObject', 'SliceObject', 'CleanObject', 'DropHandObject', 'PushObject', 'PullObject')) or
-            line_stripped.startswith(('robots', 'objects', 'if ', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ', 'return ', 'yield ', 'global ', 'nonlocal ')) or
-            # 함수 호출 패턴 추가
+        
+        # 유지할 줄들
+        if (not line_stripped or  # 빈 줄
+            line_stripped.startswith(('def ', 'import ', 'from ', 'class ', '#', '    ', '\t')) or  # 함수 정의, import, 주석, 들여쓰기
+            any(line_stripped.startswith(func) for func in ai2thor_functions) or  # AI2Thor 함수 호출
+            line_stripped.startswith(('robots', 'objects', 'if ', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ', 'return ', 'yield ', 'global ', 'nonlocal ')) or  # 변수, 제어문
+            # 함수 호출 패턴 (함수명(매개변수) 형태)
             (line_stripped and not line_stripped[0].isupper() and 
-             ('(' in line_stripped and ')' in line_stripped and 
-              any(func in line_stripped for func in ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 'SwitchOn', 'SwitchOff', 'ThrowObject', 'BreakObject', 'SliceObject', 'CleanObject', 'DropHandObject', 'PushObject', 'PullObject'])))):
-            final_lines.append(line)
-        # 그 외의 모든 설명 텍스트는 제거
+             '(' in line_stripped and ')' in line_stripped and 
+             any(func in line_stripped for func in ai2thor_functions))):
+            cleaned_lines.append(line)
     
-    return '\n'.join(final_lines)
+    result = '\n'.join(cleaned_lines)
+    
+    # 연속된 빈 줄 정리
+    result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)
+    
+    return result
 
 # Function returns object list with name and properties.
 def convert_to_dict_objprop(objs, obj_mass):
@@ -447,19 +405,72 @@ if __name__ == "__main__":
     prompt += "\n\n" + code_prompt + "\n\n"
 
     for i, (plan, solution) in enumerate(zip(decomposed_plan,allocated_plan)):
-        curr_prompt = prompt + plan
-        curr_prompt += f"\n# TASK ALLOCATION"
-        curr_prompt += f"\n\nrobots = {available_robots[i]}"
-        curr_prompt += solution
-        curr_prompt += f"\n# CODE Solution  \n"
+        curr_prompt = f"""Task: {plan}
+Robots: {available_robots[i]}
+Allocation: {solution}
+
+IMPORTANT: Generate Python code using ONLY these AI2Thor action functions:
+- GoToObject(robot, object_name)
+- PickupObject(robot, object_name) 
+- PutObject(robot, object_name, target_object)
+- OpenObject(robot, object_name)
+- CloseObject(robot, object_name)
+- SwitchOn(robot, object_name)
+- SwitchOff(robot, object_name)
+- SliceObject(robot, object_name)
+- CleanObject(robot, object_name)
+- ThrowObject(robot, object_name, target_object)
+- BreakObject(robot, object_name)
+- DropHandObject(robot)
+- PushObject(robot, object_name)
+- PullObject(robot, object_name)
+
+RULES:
+1. Use robot_list[0] for first robot, robot_list[1] for second robot
+2. Each action must be on a separate line
+3. Include comments explaining each step
+4. ALWAYS include the function call at the end
+5. Do NOT use ai2thor.Environment() or any other AI2Thor classes
+6. Do NOT use env.set_robot_state() or similar methods
+
+WORKING EXAMPLE (Toast a slice of the breadloaf):
+def toast_bread(robot_list):
+    # robot_list = [robot1, robot2]
+    # 0: SubTask 1: Toast a slice of the breadloaf
+    # 1: Go to the Bread using robot2.
+    GoToObject(robot_list[1], 'Bread')
+    # 2: Pick up the Bread using robot2.
+    PickupObject(robot_list[1], 'Bread')
+    # 3: Go to the Toaster using robot2.
+    GoToObject(robot_list[1], 'Toaster')
+    # 4: Put the Bread in the Toaster using robot2.
+    PutObject(robot_list[1], 'Bread', 'Toaster')
+    # 5: Turn on the Toaster using robot1.
+    GoToObject(robot_list[0], 'Toaster')
+    SwitchOn(robot_list[0], 'Toaster')
+    # 6: Wait for the bread to toast.
+    time.sleep(5)
+    # 7: Turn off the Toaster using robot1.
+    SwitchOff(robot_list[0], 'Toaster')
+    # 8: Pick up the toasted Bread using robot2.
+    PickupObject(robot_list[1], 'Bread')
+    # 9: Go to the CounterTop using robot2.
+    GoToObject(robot_list[1], 'CounterTop')
+    # 10: Put the toasted Bread on the CounterTop using robot2.
+    PutObject(robot_list[1], 'Bread', 'CounterTop')
+
+# Execute SubTask 1
+toast_bread([robots[0], robots[1]])
+
+Now generate the code for this task following the same pattern:"""
         
         if "gpt" not in args.model:
             # older versions of GPT
-            _, text = LM(curr_prompt, args.model, max_tokens=1000, stop=["def"], frequency_penalty=0.30)
+            _, text = LM(curr_prompt, args.model, max_tokens=1500, frequency_penalty=0.30)
         else:            
             # using variants of gpt 4 or 3.5
-            messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert"},{"role": "user", "content": curr_prompt}]
-            _, text = LM(messages, args.model, max_tokens=1400, frequency_penalty=0.4)
+            messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert. Generate ONLY Python code using AI2Thor action functions. Follow the exact format provided in the user prompt. Do not include explanations, markdown, or any text other than the Python code. Use only the specified AI2Thor functions and include the function call at the end."},{"role": "user", "content": curr_prompt}]
+            _, text = LM(messages, args.model, max_tokens=2000, frequency_penalty=0.4)
 
         # 코드 후처리 적용
         cleaned_text = clean_generated_code(text)
@@ -498,4 +509,96 @@ if __name__ == "__main__":
                 
             with open(f"./logs/{folder_name}/code_plan.py", 'w') as x:
                 x.write(code_plan[idx])
+    
+    # 통합된 실행 코드 생성 및 실행
+    if args.log_results and exec_folders:
+        print("\n" + "="*60)
+        print("🚀 통합된 시뮬레이션을 생성하고 실행합니다...")
+        print("="*60)
+        
+        # 통합 실행 폴더 생성
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
+        integrated_folder = f"integrated_simulation_{timestamp}"
+        os.makedirs(f"./logs/{integrated_folder}", exist_ok=True)
+        
+        # 통합된 코드 생성
+        integrated_code = f"""import time
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# 모든 태스크를 순차적으로 실행하는 통합 코드
+def run_all_tasks():
+    print("="*60)
+    print("🚀 통합 시뮬레이션 시작")
+    print("="*60)
+    
+    # 태스크별 실행
+"""
+        
+        # 각 태스크의 코드를 통합
+        for idx, (task, folder_name) in enumerate(zip(test_tasks, exec_folders)):
+            integrated_code += f"""
+    print("\\n" + "="*40)
+    print(f"📋 태스크 {idx+1}: {task}")
+    print("="*40)
+    
+    try:
+        # {task} 실행
+        exec(open('./logs/{folder_name}/code_plan.py').read())
+        print(f"✅ {task} 완료")
+    except Exception as e:
+        print(f"❌ {task} 실패: {{str(e)}}")
+    
+    # 태스크 간 잠시 대기
+    time.sleep(2)
+"""
+        
+        integrated_code += """
+    print("\\n" + "="*60)
+    print("🎉 모든 태스크 완료!")
+    print("="*60)
+
+# 통합 시뮬레이션 실행
+if __name__ == "__main__":
+    run_all_tasks()
+"""
+        
+        # 통합 코드 저장
+        with open(f"./logs/{integrated_folder}/integrated_code.py", 'w') as f:
+            f.write(integrated_code)
+        
+        # 통합 실행
+        print(f"📁 통합 폴더: {integrated_folder}")
+        print("🔄 통합 시뮬레이션 실행 중... (최대 10분)")
+        
+        try:
+            result = subprocess.run([
+                "python3", f"./logs/{integrated_folder}/integrated_code.py"
+            ], timeout=600)  # 10분 타임아웃
             
+            if result.returncode == 0:
+                print("✅ 통합 시뮬레이션 완료")
+            else:
+                print(f"❌ 통합 시뮬레이션 실패 (종료 코드: {result.returncode})")
+                
+        except subprocess.TimeoutExpired:
+            print("⏰ 통합 시뮬레이션 시간 초과 (10분)")
+        except Exception as e:
+            print(f"❌ 통합 시뮬레이션 중 오류: {str(e)}")
+        
+        print("\n" + "="*60)
+        print("📊 실행 결과 요약:")
+        print("-" * 40)
+        print(f"📁 통합 폴더: logs/{integrated_folder}")
+        print("📄 생성된 파일들:")
+        print("   - integrated_code.py (통합 실행 코드)")
+        for idx, (task, folder_name) in enumerate(zip(test_tasks, exec_folders)):
+            print(f"   - {folder_name}/ (태스크 {idx+1}: {task})")
+        print()
+        print("="*60)
+        print("✅ 모든 작업이 완료되었습니다!")
+        print("📁 결과 파일들은 logs/ 폴더에서 확인할 수 있습니다.")
+        print("="*60)
+    

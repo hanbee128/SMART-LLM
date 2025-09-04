@@ -1,31 +1,11 @@
+# IMPORTANT: Always use AI2Thor action functions (GoToObject, PickupObject, PutObject, etc.)
+# and include function calls at the end to execute the task!
+
 # EXAMPLE 1 - Task Description: Wash the fork. 
 # GENERAL TASK DECOMPOSITION
 # Independent subtasks:
 # SubTask 1: Wash the Fork. (Skills Required: GoToObject, PickupObject, PutObject, SwitchOn, SwitchOff)
-# We can perform SubTask 1 
-
-# CODE
-def wash_fork():
-    # 0: SubTask 1: Wash the Fork
-    # 1: Go to the Fork.
-    GoToObject('Fork')
-    # 2: Pick up the Fork.
-    PickupObject('Fork')
-    # 3: Go to the Sink.
-    GoToObject('Sink')
-    # 4: Put the Fork inside the Sink
-    PutObject('Fork', 'Sink')
-    # 5: Switch on the Faucet to clean the Fork
-    SwitchOn('Faucet')
-    # 6: Wait for a while to let the Fork clean.
-    time.sleep(5)
-    # 7: Switch off the Faucet
-    SwitchOff('Faucet')
-# Perform SubTask 1
-task1_thread = threading.Thread(target=wash_fork)
-# Start executing SubTask 1 
-task1_thread.start()
-# Task wash the fork is done
+# We can perform SubTask 1
 
 # TASK ALLOCATION
 robots = [{'name': 'robot1', 'skills': ['GoToObject', 'OpenObject', 'CloseObject', 'BreakObject', 'SliceObject', 'SwitchOn', 'SwitchOff', 'DropHandObject', 'ThrowObject', 'PushObject', 'PullObject'],'mass': 2}, {'name': 'robot2', 'skills': ['GoToObject', 'OpenObject', 'CloseObject', 'BreakObject', 'SliceObject', 'PickupObject', 'PutObject', 'SwitchOn', 'SwitchOff', 'DropHandObject', 'ThrowObject', 'PushObject', 'PullObject'],'mass': 2}]
@@ -167,6 +147,12 @@ def slice_potato(robot_list):
     PutObject(robot_list[1],'Knife', 'CounterTop')
 # Execute SubTask 1
 slice_potato([robots[0],robots[2]])
+
+# IMPORTANT: Always include function calls at the end to execute the task!
+# Example patterns:
+# function_name([robots[0], robots[1]])
+# function_name([robots[0], robots[2]])
+# function_name([robots[1], robots[2]])
 # Task fry sliced potato is done
 
 
