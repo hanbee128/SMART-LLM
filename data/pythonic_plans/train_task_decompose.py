@@ -1,3 +1,41 @@
+# Task Description: Toast a slice of the breadloaf
+
+# GENERAL TASK DECOMPOSITION 
+# Decompose and parallelize subtasks where ever possible
+# Independent subtasks:
+# SubTask 1: Toast a slice of the breadloaf. (Skills Required: GoToObject, PickupObject, PutObject, SwitchOn, SwitchOff)
+# We can perform SubTask 1.
+
+# CODE
+def toast_bread():
+    # 0: SubTask 1: Toast a slice of the breadloaf
+    # 1: Go to the Bread.
+    GoToObject('Bread')
+    # 2: Pick up the Bread.
+    PickupObject('Bread')
+    # 3: Go to the Toaster.
+    GoToObject('Toaster')
+    # 4: Put the Bread in the Toaster.
+    PutObject('Bread', 'Toaster')
+    # 5: Turn on the Toaster.
+    SwitchOn('Toaster')
+    # 6: Wait for the bread to toast.
+    time.sleep(5)
+    # 7: Turn off the Toaster.
+    SwitchOff('Toaster')
+    # 8: Pick up the toasted Bread.
+    PickupObject('Bread')
+    # 9: Go to the CounterTop.
+    GoToObject('CounterTop')
+    # 10: Put the toasted Bread on the CounterTop.
+    PutObject('Bread', 'CounterTop')
+
+# Execute SubTask 1
+toast_bread()
+
+# Task toast a slice of the breadloaf is done
+
+
 # Task Description: Put an Egg in the Fridge, and place a pot containing Apple slices into the refrigerator.
 
 # GENERAL TASK DECOMPOSITION 

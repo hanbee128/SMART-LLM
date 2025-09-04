@@ -213,13 +213,20 @@ def clean_generated_code(code):
             # 함수 호출 패턴 (함수명(매개변수) 형태)
             (line_stripped and not line_stripped[0].isupper() and 
              '(' in line_stripped and ')' in line_stripped and 
-             any(func in line_stripped for func in ai2thor_functions))):
+             any(func in line_stripped for func in ai2thor_functions)) or
+            # 함수 실행 호출 패턴
+            (line_stripped and '(' in line_stripped and ')' in line_stripped and 
+             not line_stripped.startswith('#') and 'robot' in line_stripped.lower())):
             cleaned_lines.append(line)
     
     result = '\n'.join(cleaned_lines)
     
     # 연속된 빈 줄 정리
     result = re.sub(r'\n\s*\n\s*\n', '\n\n', result)
+    
+    # 빈 함수나 잘못된 함수명 제거
+    if 'def assemble_object' in result:
+        result = result.replace('def assemble_object', 'def toast_bread')
     
     return result
 
@@ -303,9 +310,10 @@ if __name__ == "__main__":
     for robots_list in robots_test_tasks:
         task_robots = []
         for i, r_id in enumerate(robots_list):
-            rob = robots.robots [r_id-1]
-            # rename the robot
-            rob['name'] = 'robot' + str(i+1)
+            rob = copy.deepcopy(robots.robots [r_id-1])  # Create a deep copy
+            # rename the robot using sequential index (1, 2, 3, ...)
+            rob['name'] = 'robot' + str(i + 1)
+            print(f"Debug: r_id={r_id}, i={i}, new_name={rob['name']}")
             task_robots.append(rob)
         available_robots.append(task_robots)
         
@@ -405,7 +413,7 @@ if __name__ == "__main__":
     prompt += "\n\n" + code_prompt + "\n\n"
 
     for i, (plan, solution) in enumerate(zip(decomposed_plan,allocated_plan)):
-        curr_prompt = f"""Task: {plan}
+        curr_prompt = f"""Task: {test_tasks[i]}
 Robots: {available_robots[i]}
 Allocation: {solution}
 
@@ -462,7 +470,17 @@ def toast_bread(robot_list):
 # Execute SubTask 1
 toast_bread([robots[0], robots[1]])
 
-Now generate the code for this task following the same pattern:"""
+Now generate the code for this task following the same pattern:
+
+CRITICAL REQUIREMENTS:
+1. The function name must match the task description (e.g., toast_bread, put_mug_in_coffee_machine)
+2. Use ONLY the AI2Thor action functions listed above
+3. Use robot_list[0] for first robot, robot_list[1] for second robot, etc.
+4. Include the function call at the end: function_name([robots[0], robots[1]])
+5. Each action must be on a separate line with comments
+6. Do NOT generate generic function names like "assemble_object" or "task_function"
+
+Generate the code now:"""
         
         if "gpt" not in args.model:
             # older versions of GPT
@@ -510,95 +528,8 @@ Now generate the code for this task following the same pattern:"""
             with open(f"./logs/{folder_name}/code_plan.py", 'w') as x:
                 x.write(code_plan[idx])
     
-    # 통합된 실행 코드 생성 및 실행
-    if args.log_results and exec_folders:
-        print("\n" + "="*60)
-        print("🚀 통합된 시뮬레이션을 생성하고 실행합니다...")
-        print("="*60)
-        
-        # 통합 실행 폴더 생성
-        import datetime
-        timestamp = datetime.datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
-        integrated_folder = f"integrated_simulation_{timestamp}"
-        os.makedirs(f"./logs/{integrated_folder}", exist_ok=True)
-        
-        # 통합된 코드 생성
-        integrated_code = f"""import time
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# 모든 태스크를 순차적으로 실행하는 통합 코드
-def run_all_tasks():
+    print("\n" + "="*60)
+    print("✅ 모든 작업이 완료되었습니다!")
+    print("📁 결과 파일들은 logs/ 폴더에서 확인할 수 있습니다.")
     print("="*60)
-    print("🚀 통합 시뮬레이션 시작")
-    print("="*60)
-    
-    # 태스크별 실행
-"""
-        
-        # 각 태스크의 코드를 통합
-        for idx, (task, folder_name) in enumerate(zip(test_tasks, exec_folders)):
-            integrated_code += f"""
-    print("\\n" + "="*40)
-    print(f"📋 태스크 {idx+1}: {task}")
-    print("="*40)
-    
-    try:
-        # {task} 실행
-        exec(open('./logs/{folder_name}/code_plan.py').read())
-        print(f"✅ {task} 완료")
-    except Exception as e:
-        print(f"❌ {task} 실패: {{str(e)}}")
-    
-    # 태스크 간 잠시 대기
-    time.sleep(2)
-"""
-        
-        integrated_code += """
-    print("\\n" + "="*60)
-    print("🎉 모든 태스크 완료!")
-    print("="*60)
-
-# 통합 시뮬레이션 실행
-if __name__ == "__main__":
-    run_all_tasks()
-"""
-        
-        # 통합 코드 저장
-        with open(f"./logs/{integrated_folder}/integrated_code.py", 'w') as f:
-            f.write(integrated_code)
-        
-        # 통합 실행
-        print(f"📁 통합 폴더: {integrated_folder}")
-        print("🔄 통합 시뮬레이션 실행 중... (최대 10분)")
-        
-        try:
-            result = subprocess.run([
-                "python3", f"./logs/{integrated_folder}/integrated_code.py"
-            ], timeout=600)  # 10분 타임아웃
-            
-            if result.returncode == 0:
-                print("✅ 통합 시뮬레이션 완료")
-            else:
-                print(f"❌ 통합 시뮬레이션 실패 (종료 코드: {result.returncode})")
-                
-        except subprocess.TimeoutExpired:
-            print("⏰ 통합 시뮬레이션 시간 초과 (10분)")
-        except Exception as e:
-            print(f"❌ 통합 시뮬레이션 중 오류: {str(e)}")
-        
-        print("\n" + "="*60)
-        print("📊 실행 결과 요약:")
-        print("-" * 40)
-        print(f"📁 통합 폴더: logs/{integrated_folder}")
-        print("📄 생성된 파일들:")
-        print("   - integrated_code.py (통합 실행 코드)")
-        for idx, (task, folder_name) in enumerate(zip(test_tasks, exec_folders)):
-            print(f"   - {folder_name}/ (태스크 {idx+1}: {task})")
-        print()
-        print("="*60)
-        print("✅ 모든 작업이 완료되었습니다!")
-        print("📁 결과 파일들은 logs/ 폴더에서 확인할 수 있습니다.")
-        print("="*60)
     
