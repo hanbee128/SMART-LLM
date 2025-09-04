@@ -97,9 +97,24 @@ def LM(prompt, model_name, max_tokens=128, temperature=0, stop=None, logprobs=1,
             generation_config=genai.types.GenerationConfig(
                 max_output_tokens=max_tokens,
                 temperature=temperature
-            )
+            ),
+            safety_settings=[
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+            ]
         )
-        return response, response.text.strip()
+        
+        # Check if response is valid
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            return response, response.text.strip()
+        else:
+            # Handle blocked content or empty response
+            finish_reason = response.candidates[0].finish_reason if response.candidates else "UNKNOWN"
+            error_msg = f"Gemini API 응답이 차단되었습니다. finish_reason: {finish_reason}"
+            print(f"경고: {error_msg}")
+            return response, f"# {error_msg}\n# 빈 응답이 생성되었습니다."
     
     # Ollama (Local)
     elif "ollama" in model_name.lower():
@@ -135,22 +150,40 @@ def LM(prompt, model_name, max_tokens=128, temperature=0, stop=None, logprobs=1,
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 
-def set_api_keys(api_key_file):
+def get_api_key_interactive(model_name):
+    """사용자로부터 API 키를 안전하게 입력받습니다."""
+    if "gpt" in model_name.lower():
+        api_key = input("OpenAI API 키를 입력하세요: ").strip()
+        if not api_key:
+            raise ValueError("OpenAI API 키가 필요합니다.")
+        return api_key
+    elif "claude" in model_name.lower():
+        api_key = input("Anthropic API 키를 입력하세요: ").strip()
+        if not api_key:
+            raise ValueError("Anthropic API 키가 필요합니다.")
+        return api_key
+    elif "gemini" in model_name.lower():
+        api_key = input("Google Gemini API 키를 입력하세요: ").strip()
+        if not api_key:
+            raise ValueError("Google Gemini API 키가 필요합니다.")
+        return api_key
+    elif "ollama" in model_name.lower():
+        return None  # Ollama는 로컬이므로 API 키 불필요
+    else:
+        raise ValueError(f"지원하지 않는 모델: {model_name}")
+
+def set_api_key_for_model(model_name, api_key):
+    """모델에 맞는 API 키를 설정합니다."""
     global anthropic_api_key, gemini_api_key
     
-    # Set OpenAI API key
-    openai.api_key = Path(api_key_file + '.txt').read_text()
-    
-    # Try to read other API keys if they exist
-    try:
-        anthropic_api_key = Path(api_key_file + '_anthropic.txt').read_text().strip()
-    except FileNotFoundError:
-        anthropic_api_key = None
-    
-    try:
-        gemini_api_key = Path(api_key_file + '_gemini.txt').read_text().strip()
-    except FileNotFoundError:
-        gemini_api_key = None
+    if "gpt" in model_name.lower():
+        openai.api_key = api_key
+    elif "claude" in model_name.lower():
+        anthropic_api_key = api_key
+    elif "gemini" in model_name.lower():
+        gemini_api_key = api_key
+    elif "ollama" in model_name.lower():
+        pass  # Ollama는 로컬이므로 API 키 불필요
 
 # Function returns object list with name and properties.
 def convert_to_dict_objprop(objs, obj_mass):
@@ -173,17 +206,14 @@ def get_ai2_thor_objects(floor_plan_id):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--floor-plan", type=int, required=True)
-    parser.add_argument("--openai-api-key-file", type=str, default="api_key")
     parser.add_argument("--model", type=str, default="gpt-3.5-turbo", 
                         choices=[
                             # OpenAI models
-                            'gpt-3.5-turbo', 'gpt-4', 'gpt-3.5-turbo-16k', 'gpt-4-turbo',
-                            # Claude models
-                            'claude-3-haiku-20240307', 'claude-3-sonnet-20240229', 'claude-3-opus-20240229',
+                            'gpt-3.5-turbo', 'gpt-4',
                             # Gemini models
-                            'gemini-pro', 'gemini-pro-vision',
+                            'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-exp',
                             # Ollama models (local)
-                            'ollama:llama2', 'ollama:llama3', 'ollama:tinyllama', 'ollama:codellama', 'ollama:mistral', 'ollama:phi'
+                            'ollama:llama3', 'ollama:tinyllama'
                         ])
     
     parser.add_argument("--prompt-decompse-set", type=str, default="train_task_decompose", 
@@ -199,7 +229,10 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    set_api_keys(args.openai_api_key_file)
+    # 사용자로부터 API 키 입력받기
+    print(f"선택된 모델: {args.model}")
+    api_key = get_api_key_interactive(args.model)
+    set_api_key_for_model(args.model, api_key)
     
     if not os.path.isdir(f"./logs/"):
         os.makedirs(f"./logs/")
@@ -247,7 +280,7 @@ if __name__ == "__main__":
     
     prompt += "\n\n" + decompose_prompt
     
-    print ("Generating Decompsed Plans...")
+    print ("1단계: Generating Decompsed Plans...")
     
     decomposed_plan = []
     for task in test_tasks:
@@ -262,7 +295,7 @@ if __name__ == "__main__":
 
         decomposed_plan.append(text)
         
-    print ("Generating Allocation Solution...")
+    print ("2단계: Generating Allocation Solution...")
 
     ######## Train Task Allocation - SOLUTION ########
     prompt = f"from skills import " + actions.ai2thor_actions
@@ -303,7 +336,7 @@ if __name__ == "__main__":
 
         allocated_plan.append(text)
     
-    print ("Generating Allocated Code...")
+    print ("3단계: Generating Allocated Code...")
     
     ######## Train Task Allocation - CODE Solution ########
 

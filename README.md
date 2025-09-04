@@ -87,29 +87,22 @@ pip install -r requirments.txt
 ```
 
 ## API 키 설정
-코드는 여러 LLM을 지원합니다. 사용하려는 LLM에 따라 해당 API 키를 설정하세요.
+코드는 여러 LLM을 지원합니다. **보안을 위해 API 키는 파일에 저장하지 않고 실행할 때마다 입력받습니다.**
 
-### OpenAI (기본)
-https://platform.openai.com/에서 API 키를 생성하고 `api_key.txt` 파일에 저장하세요.
+### API 키 획득 방법:
+- **OpenAI**: https://platform.openai.com/에서 API 키 생성
+- **Claude (Anthropic)**: https://console.anthropic.com/에서 API 키 생성  
+- **Gemini (Google)**: https://makersuite.google.com/app/apikey에서 API 키 생성
+- **Ollama (로컬)**: API 키 불필요
 
-### Claude (Anthropic)
-https://console.anthropic.com/에서 API 키를 생성하고 `api_key_anthropic.txt` 파일에 저장하세요.
-
-### Gemini (Google)
-https://makersuite.google.com/app/apikey에서 API 키를 생성하고 `api_key_gemini.txt` 파일에 저장하세요.
-
-### Ollama (로컬)
-Ollama를 설치하고 원하는 모델을 다운로드하세요:
+### Ollama 설치 (로컬 모델용)
 ```bash
 # Ollama 설치 (Linux/Mac)
 curl -fsSL https://ollama.ai/install.sh | sh
 
 # 모델 다운로드 예시
-ollama pull llama2
 ollama pull llama3
 ollama pull tinyllama
-ollama pull codellama
-ollama pull mistral
 ```
 
 ## 스크립트 실행
@@ -121,24 +114,33 @@ python3 scripts/run_llm.py --floor-plan {floor_plan_no} --model {model_name}
 ```
 
 ### 지원되는 모델:
-- **OpenAI**: `gpt-3.5-turbo`, `gpt-4`, `gpt-3.5-turbo-16k`, `gpt-4-turbo`
-- **Claude**: `claude-3-haiku-20240307`, `claude-3-sonnet-20240229`, `claude-3-opus-20240229`
-- **Gemini**: `gemini-pro`, `gemini-pro-vision`
-- **Ollama**: `ollama:llama2`, `ollama:llama3`, `ollama:tinyllama`, `ollama:codellama`, `ollama:mistral`, `ollama:phi`
+- **OpenAI**: `gpt-3.5-turbo`, `gpt-4`
+- **Gemini**: `gemini-2.5-flash`, `gemini-1.5-flash`, `gemini-2.0-flash-exp`
+- **Ollama**: `ollama:llama3`, `ollama:tinyllama`
 
 ### 사용 예시:
 ```bash
-# OpenAI GPT-4 사용
+# OpenAI GPT-4 사용 (API 키 입력 요구)
 python3 scripts/run_llm.py --floor-plan 6 --model gpt-4
+# 실행 시: "OpenAI API 키를 입력하세요: " 프롬프트가 나타남
 
-# Claude 사용
-python3 scripts/run_llm.py --floor-plan 6 --model claude-3-sonnet-20240229
+# OpenAI GPT-3.5-turbo 사용 (API 키 입력 요구)
+python3 scripts/run_llm.py --floor-plan 6 --model gpt-3.5-turbo
+# 실행 시: "OpenAI API 키를 입력하세요: " 프롬프트가 나타남
 
-# Gemini 사용
-python3 scripts/run_llm.py --floor-plan 6 --model gemini-pro
+# Gemini 2.5 Flash 사용 (API 키 입력 요구)
+python3 scripts/run_llm.py --floor-plan 6 --model gemini-2.5-flash
+# 실행 시: "Google Gemini API 키를 입력하세요: " 프롬프트가 나타남
 
-# Ollama 로컬 모델 사용
-python3 scripts/run_llm.py --floor-plan 6 --model ollama:llama2
+# Gemini 1.5 Flash 사용 (API 키 입력 요구)
+python3 scripts/run_llm.py --floor-plan 6 --model gemini-1.5-flash
+# 실행 시: "Google Gemini API 키를 입력하세요: " 프롬프트가 나타남
+
+# Gemini 2.0 Flash Exp 사용 (API 키 입력 요구)
+python3 scripts/run_llm.py --floor-plan 6 --model gemini-2.0-flash-exp
+# 실행 시: "Google Gemini API 키를 입력하세요: " 프롬프트가 나타남
+
+# Ollama 로컬 모델 사용 (API 키 불필요)
 python3 scripts/run_llm.py --floor-plan 6 --model ollama:llama3
 python3 scripts/run_llm.py --floor-plan 6 --model ollama:tinyllama
 ```

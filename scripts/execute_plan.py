@@ -64,4 +64,4 @@ expt_name = args.command
 print (expt_name)
 ai_exec_file = compile_aithor_exec_file(expt_name)
 
-subprocess.run(["python", ai_exec_file])
+subprocess.run(["python3", ai_exec_file])
