@@ -231,11 +231,54 @@ def clean_generated_code(code):
     if 'def assemble_object' in result:
         result = result.replace('def assemble_object', 'def toast_bread')
     
-    # 잘못된 객체 이름 교정
+    # 잘못된 객체 이름 교정 (AI2-THOR 정확한 이름으로)
+    # 전화기 관련
     result = result.replace("'MobilePhone'", "'CellPhone'")
     result = result.replace("'Cellphone'", "'CellPhone'")
-    result = result.replace("'Refrigerator'", "'Fridge'")
+    result = result.replace("'cellphone'", "'CellPhone'")
+    result = result.replace("'mobilephone'", "'CellPhone'")
+    
+    # 냉장고 관련
+    result = result.replace("'Fridge'", "'Refrigerator'")
+    result = result.replace("'fridge'", "'Refrigerator'")
+    
+    # TV 관련
+    result = result.replace("'TV'", "'Television'")
+    result = result.replace("'tv'", "'Television'")
+    result = result.replace("'television'", "'Television'")
+    
+    # 테이블 관련
+    result = result.replace("'Coffeetable'", "'CoffeeTable'")
+    result = result.replace("'coffeetable'", "'CoffeeTable'")
+    result = result.replace("'coffeeTable'", "'CoffeeTable'")
+    
+    # 쓰레기통 관련
+    result = result.replace("'TrashCan'", "'GarbageCan'")
+    result = result.replace("'trashcan'", "'GarbageCan'")
+    result = result.replace("'garbagecan'", "'GarbageCan'")
+    
+    # 리모컨 관련
+    result = result.replace("'Remote'", "'RemoteControl'")
+    result = result.replace("'remote'", "'RemoteControl'")
+    result = result.replace("'remotecontrol'", "'RemoteControl'")
+    
+    # 조명 관련
+    result = result.replace("'FloorLamp'", "'Lamp'")
+    result = result.replace("'floorlamp'", "'Lamp'")
+    result = result.replace("'floorLamp'", "'Lamp'")
+    
+    # 존재하지 않는 객체들
     result = result.replace("'PowerButton'", "'Laptop'")  # PowerButton은 존재하지 않음
+    result = result.replace("'powerbutton'", "'Laptop'")
+    
+    # 물뿌리개 관련 (Floor Plan 209에서 사용)
+    result = result.replace("'WateringCan'", "'WateringCan'")  # WateringCan이 정확한 이름
+    result = result.replace("'wateringcan'", "'WateringCan'")
+    result = result.replace("'wateringCan'", "'WateringCan'")
+    
+    # 액션 함수 이름 교정 (AI2-THOR 정확한 액션으로)
+    result = result.replace("SwitchOn(", "ToggleObjectOn(")  # SwitchOn을 ToggleObjectOn으로 교정
+    result = result.replace("SwitchOff(", "ToggleObjectOff(")  # SwitchOff를 ToggleObjectOff로 교정
     
     return result
 
@@ -432,15 +475,33 @@ IMPORTANT: Generate Python code using ONLY these AI2Thor action functions:
 - PutObject(robot, object_name, target_object)
 - OpenObject(robot, object_name)
 - CloseObject(robot, object_name)
-- SwitchOn(robot, object_name)
-- SwitchOff(robot, object_name)
+- ToggleObjectOn(robot, object_name)  # Use ToggleObjectOn instead of SwitchOn
+- ToggleObjectOff(robot, object_name)  # Use ToggleObjectOff instead of SwitchOff
 - SliceObject(robot, object_name)
 - CleanObject(robot, object_name)
+- DirtyObject(robot, object_name)
 - ThrowObject(robot, object_name, target_object)
 - BreakObject(robot, object_name)
 - DropHandObject(robot)
 - PushObject(robot, object_name)
 - PullObject(robot, object_name)
+- FillObjectWithLiquid(robot, object_name)
+- EmptyLiquidFromObject(robot, object_name)
+
+AVAILABLE OBJECTS (Use these exact names with correct capitalization):
+Furniture: Armchair, Bed, Bookcase, Cabinet, Chair, CoffeeTable, CounterTop, Desk, DiningTable, Drawer, Dresser, Ottoman, Painting, Safe, Shelf, SideTable, Sofa, TVStand
+Kitchenware: Bowl, Bottle, Cup, Fork, GarbageCan, Kettle, Knife, Microwave, Mug, Pan, Plate, Pot, Refrigerator, Sink, Spoon, StoveBurner, Toaster, WineBottle
+Food: Apple, Bread, ButterKnife, Egg, Lettuce, Potato, Tomato
+Electronics: AlarmClock, Blinds, CellPhone, Computer, HousePlant, Lamp, Laptop, LightSwitch, Pen, Pencil, RemoteControl, Statue, Television, Vase
+Miscellaneous: Basket, Book, Box, Candle, CD, Cloth, CreditCard, Newspaper, Pillow, SaltShaker, SoapBar, SprayBottle, Toilet, ToiletPaper, Towel, Window
+
+IMPORTANT: Use exact capitalization as shown above. Common corrections:
+- CellPhone (not Cellphone or cellphone)
+- CoffeeTable (not Coffeetable or coffeeTable)
+- GarbageCan (not TrashCan or garbagecan)
+- RemoteControl (not Remote or remotecontrol)
+- Television (not TV or television)
+- Refrigerator (not Fridge or fridge)
 
 RULES:
 1. Use robot_list[0] for first robot, robot_list[1] for second robot
@@ -466,11 +527,11 @@ def toast_bread(robot_list):
     PutObject(robot_list[1], 'Bread', 'Toaster')
     # 5: Turn on the Toaster using robot1.
     GoToObject(robot_list[0], 'Toaster')
-    SwitchOn(robot_list[0], 'Toaster')
+    ToggleObjectOn(robot_list[0], 'Toaster')
     # 6: Wait for the bread to toast.
     time.sleep(5)
     # 7: Turn off the Toaster using robot1.
-    SwitchOff(robot_list[0], 'Toaster')
+    ToggleObjectOff(robot_list[0], 'Toaster')
     # 8: Pick up the toasted Bread using robot2.
     PickupObject(robot_list[1], 'Bread')
     # 9: Go to the CounterTop using robot2.
@@ -487,7 +548,7 @@ def turn_on_laptop(robot_list):
     # 0: Go to the Laptop using robot1.
     GoToObject(robot_list[0], 'Laptop')
     # 1: Turn on the Laptop using robot1.
-    SwitchOn(robot_list[0], 'Laptop')
+    ToggleObjectOn(robot_list[0], 'Laptop')
 
 # Execute SubTask
 turn_on_laptop([robots[0]])
@@ -495,13 +556,32 @@ turn_on_laptop([robots[0]])
 WORKING EXAMPLE (Turn on the mobile phone):
 def turn_on_mobile_phone(robot_list):
     # robot_list = [robot1]
-    # 0: Go to the Cellphone using robot1.
-    GoToObject(robot_list[0], 'Cellphone')
-    # 1: Turn on the Cellphone using robot1.
-    SwitchOn(robot_list[0], 'Cellphone')
+    # 0: Go to the CellPhone using robot1.
+    GoToObject(robot_list[0], 'CellPhone')
+    # 1: Turn on the CellPhone using robot1.
+    ToggleObjectOn(robot_list[0], 'CellPhone')
 
 # Execute SubTask
 turn_on_mobile_phone([robots[0]])
+
+WORKING EXAMPLE (Wash the fork and put it in the bowl):
+def wash_fork_and_put_in_bowl(robot_list):
+    # robot_list = [robot1, robot2]
+    # 0: Go to the Fork using robot1.
+    GoToObject(robot_list[0], 'Fork')
+    # 1: Pick up the Fork using robot1.
+    PickupObject(robot_list[0], 'Fork')
+    # 2: Go to the Sink using robot1.
+    GoToObject(robot_list[0], 'Sink')
+    # 3: Clean the Fork using robot1.
+    CleanObject(robot_list[0], 'Fork')
+    # 4: Go to the Bowl using robot1.
+    GoToObject(robot_list[0], 'Bowl')
+    # 5: Put the Fork in the Bowl using robot1.
+    PutObject(robot_list[0], 'Fork', 'Bowl')
+
+# Execute SubTask
+wash_fork_and_put_in_bowl([robots[0], robots[1]])
 
 Now generate the code for this task following the same pattern:
 
