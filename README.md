@@ -29,7 +29,7 @@ Run the following command to generate output execuate python scripts to perform 
 
 Refer to https://ai2thor.allenai.org/demo for the layout of various AI2Thor floor plans.
 ```
-python3 scripts/run_llm.py --floor-plan {floor_plan_no}
+python3 scripts/run_llm.py --floor-plan {floor_plan_no}fl
 ```
 Note: Refer to the script for running it on different versions of GPT models and changing the test dataset. 
 
@@ -310,6 +310,74 @@ python3 scripts/execute_plan.py --help
 파일 이름은 작업이 실행될 AI2THOR 플로어 플랜에 해당합니다.
 
 최종 테스트에서 사용된 로봇 목록과 각 로봇이 보유한 기술은 ```resources\robots.py```를 참조하세요.
+
+## 🚀 최신 업데이트 (2025년 9월)
+
+### 주요 개선사항
+
+#### 1. **로봇 인덱스 문제 해결** 🔧
+- **문제**: `IndexError: list index out of range` 오류 발생
+- **원인**: 로봇 객체가 전역적으로 수정되어 잘못된 인덱스 사용
+- **해결**: `copy.deepcopy()` 사용으로 로봇 객체 독립성 보장
+- **결과**: 다중 로봇 태스크에서 안정적인 실행
+
+#### 2. **물체 이동 로직 개선** 🎯
+- **문제**: 로봇이 물체를 집은 후 목적지까지 이동하지 않고 공중에서 물체만 이동
+- **원인**: LLM이 `GoToObject` → `PickupObject` → `PutObject` 패턴만 생성
+- **해결**: 프롬프트에 명확한 예시 추가
+- **결과**: 로봇이 실제로 목적지까지 이동하여 물체를 배치
+
+#### 3. **객체 이름 검증 강화** ✅
+- **문제**: 존재하지 않는 객체 이름 사용 (`'PowerButton'`, `'Refrigerator'` 등)
+- **원인**: LLM이 AI2Thor 환경의 실제 객체 이름을 모름
+- **해결**: 프롬프트에 올바른 사용 예시 추가
+- **결과**: 유효한 AI2Thor 객체만 사용하는 코드 생성
+
+#### 4. **코드 생성 품질 향상** 📝
+- **문제**: 생성된 코드에 설명 주석이 포함되어 SyntaxError 발생
+- **원인**: `clean_generated_code` 함수가 설명 주석을 제거하지 못함
+- **해결**: 설명 주석 필터링 로직 추가
+- **결과**: 깔끔하고 실행 가능한 Python 코드 생성
+
+### 기술적 세부사항
+
+#### 로봇 객체 관리 개선
+```python
+# 이전 (문제가 있던 코드)
+rob = robots.robots[r_id-1]  # 전역 객체 수정
+rob['name'] = 'robot' + str(r_id)  # 잘못된 네이밍
+
+# 개선된 코드
+rob = copy.deepcopy(robots.robots[r_id-1])  # 독립적 복사
+rob['name'] = 'robot' + str(i + 1)  # 순차적 네이밍
+```
+
+#### 프롬프트 엔지니어링 강화
+```python
+# 물체 이동 올바른 패턴
+GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Object', 'Destination')
+
+# 전자제품 켜기 올바른 패턴
+GoToObject(robot, 'Device') → SwitchOn(robot, 'Device')
+```
+
+### 테스트 결과
+
+#### 성공적으로 실행된 태스크들
+- ✅ **"Place the laptop on the bed"** - 단일 로봇 태스크
+- ✅ **"Put the baseballbat and tennis racket on the bed"** - 다중 로봇 병렬 태스크
+- ✅ **"Turn on the laptop"** - 전자제품 조작 태스크
+
+#### 해결된 오류들
+- ❌ `IndexError: list index out of range` → ✅ 해결
+- ❌ `UnboundLocalError: local variable 'dest_obj_id'` → ✅ 해결 (객체 이름 문제)
+- ❌ `SyntaxError: invalid syntax` → ✅ 해결 (주석 제거)
+
+### 사용 권장사항
+
+1. **모델 선택**: `ollama:llama3` (API 제한 없음) 또는 `gemini-1.5-flash` (안정적)
+2. **플로어 플랜**: Floor Plan 303 (침실 환경) - 테스트 완료
+3. **실행 순서**: `run_llm.py` → `execute_plan.py` 순서로 실행
 
 ## 인용
 이 연구가 귀하의 연구에 유용하다고 생각하시면, 다음을 인용해 주시기 바랍니다:
