@@ -4,6 +4,10 @@ import numpy as np
 total_exec = 0
 success_exec = 0
 
+# 비디오 라이터 초기화
+video_writer = None
+video_initialized = False
+
 c = Controller( height=600, width=600)
 c.reset("FloorPlan" + str(floor_no)) 
 no_robot = len(robots)
@@ -42,24 +46,23 @@ for i in range (no_robot):
     # c.step(action="LookUp", degrees=30, 'agent_id':i)
 
 def exec_actions():
-    global total_exec, success_exec
+    global total_exec, success_exec, video_writer, video_initialized
     # delete if current output already exist
     cur_path = os.path.dirname(__file__) + "/*/"
     for x in glob(cur_path, recursive = True):
         shutil.rmtree (x)
     
-    # create new folders to save the images from the agents
-    for i in range(no_robot):
-        folder_name = "agent_" + str(i+1)
-        folder_path = os.path.dirname(__file__) + "/" + folder_name
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
+    # 이미지 저장 기능 제거로 폴더 생성 불필요
+    # for i in range(no_robot):
+    #     folder_name = "agent_" + str(i+1)
+    #     folder_path = os.path.dirname(__file__) + "/" + folder_name
+    #     if not os.path.exists(folder_path):
+    #         os.makedirs(folder_path)
     
-    # create folder to store the top view images
-    folder_name = "top_view"
-    folder_path = os.path.dirname(__file__) + "/" + folder_name
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+    # folder_name = "top_view"
+    # folder_path = os.path.dirname(__file__) + "/" + folder_name
+    # if not os.path.exists(folder_path):
+    #     os.makedirs(folder_path)
     
     img_counter = 0
     
@@ -167,17 +170,13 @@ def exec_actions():
             except Exception as e:
                 print (e)
                 
-            # 각 에이전트 이미지 수집 및 저장
+            # 각 에이전트 이미지 수집 (저장하지 않음)
             agent_images = []
             for i,e in enumerate(multi_agent_event.events):
-                f_name = os.path.dirname(__file__) + "/agent_" + str(i+1) + "/img_" + str(img_counter).zfill(5) + ".png"
-                cv2.imwrite(f_name, e.cv2img)
                 agent_images.append(e.cv2img)
             
-            # Top view 이미지 저장
+            # Top view 이미지 수집 (저장하지 않음)
             top_view_rgb = cv2.cvtColor(c.last_event.events[0].third_party_camera_frames[-1], cv2.COLOR_BGR2RGB)
-            f_name = os.path.dirname(__file__) + "/top_view/img_" + str(img_counter).zfill(5) + ".png"
-            cv2.imwrite(f_name, top_view_rgb)
             
             # 모든 시각화를 하나의 창에 분할로 표시
             if agent_images:
@@ -239,6 +238,28 @@ def exec_actions():
                         cv2.putText(combined, "Top View", (w+10, h+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
                 
                 cv2.imshow('SMART-LLM Multi-Agent View', combined)
+                
+                # 통합 화면을 비디오로 저장
+                if not video_initialized:
+                    try:
+                        # 현재 로그 폴더 경로 찾기 (glob 모듈 충돌 방지)
+                        import glob as glob_module
+                        log_folders = glob_module.glob(os.path.join(os.getcwd(), "logs", "*"))
+                        latest_log_folder = max(log_folders, key=os.path.getctime) if log_folders else os.getcwd()
+                        
+                        # 비디오 파일 경로 설정 (로그 폴더 내)
+                        video_path = os.path.join(latest_log_folder, "combined_visualization.mp4")
+                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                        fps = 25
+                        video_writer = cv2.VideoWriter(video_path, fourcc, fps, (combined.shape[1], combined.shape[0]))
+                        video_initialized = True
+                        print(f"비디오 저장 시작: {video_path}")
+                    except Exception as e:
+                        print(f"비디오 라이터 초기화 실패: {e}")
+                
+                if video_writer is not None:
+                    video_writer.write(combined)
+            
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
             
@@ -572,4 +593,20 @@ def ThrowObject(robot, sw_obj):
             break # find the first instance
     
     action_queue.append({'action':'ThrowObject', 'objectId':sw_obj_id, 'agent_id':agent_id}) 
+    time.sleep(1)
+
+def FillObjectWithLiquid(robot, obj):
+    print ("Filling with liquid: ", obj)
+    robot_name = robot['name']
+    agent_id = int(robot_name[-1]) - 1
+    objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
+    
+    for obj_id in objs:
+        match = re.match(obj, obj_id)
+        if match is not None:
+            obj_id_found = obj_id
+            break
+    GoToObject(robot, obj_id_found)
+    time.sleep(1)
+    action_queue.append({'action':'FillObjectWithLiquid', 'objectId':obj_id_found, 'agent_id':agent_id})
     time.sleep(1)

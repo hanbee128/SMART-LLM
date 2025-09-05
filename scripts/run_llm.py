@@ -185,7 +185,7 @@ def set_api_key_for_model(model_name, api_key):
     elif "ollama" in model_name.lower():
         pass  # Ollama는 로컬이므로 API 키 불필요
 
-def clean_generated_code(code):
+def clean_generated_code(code, available_robots_count=1):
     """생성된 코드에서 마크다운 블록과 불필요한 텍스트를 제거합니다."""
     import re
     
@@ -276,9 +276,80 @@ def clean_generated_code(code):
     result = result.replace("'wateringcan'", "'WateringCan'")
     result = result.replace("'wateringCan'", "'WateringCan'")
     
+    # 욕실 관련
+    result = result.replace("'Bathroom'", "'Bathtub'")  # Bathroom은 존재하지 않음, Bathtub으로 교정
+    result = result.replace("'bathroom'", "'Bathtub'")
+    result = result.replace("'BathTub'", "'Bathtub'")  # 대소문자 통일
+    result = result.replace("'bathtub'", "'Bathtub'")
+    
+    # 물 관련 - Water 객체는 존재하지 않음, FillObjectWithLiquid 액션 사용
+    result = result.replace("PickupObject(robot_list[0], 'Water')", "FillObjectWithLiquid(robot_list[0], 'Bathtub')")
+    result = result.replace("PickupObject(robot_list[1], 'Water')", "FillObjectWithLiquid(robot_list[1], 'Bathtub')")
+    result = result.replace("PickupObject(robot_list[2], 'Water')", "FillObjectWithLiquid(robot_list[2], 'Bathtub')")
+    result = result.replace("PickupObject(robot_list[3], 'Water')", "FillObjectWithLiquid(robot_list[3], 'Bathtub')")
+    
+    # Keychain 관련 - Keychain은 존재하지 않음, CreditCard로 교정
+    result = result.replace("'Keychain'", "'CreditCard'")
+    result = result.replace("'keychain'", "'CreditCard'")
+    result = result.replace("'KeyChain'", "'CreditCard'")
+    result = result.replace("'keyChain'", "'CreditCard'")
+    
     # 액션 함수 이름 교정 (AI2-THOR 정확한 액션으로)
     result = result.replace("SwitchOn(", "ToggleObjectOn(")  # SwitchOn을 ToggleObjectOn으로 교정
     result = result.replace("SwitchOff(", "ToggleObjectOff(")  # SwitchOff를 ToggleObjectOff로 교정
+    
+    # 로봇 수 검증 및 수정
+    # 사용 가능한 로봇 수보다 많은 로봇을 요구하는 경우 수정
+    if available_robots_count == 1:
+        # 1개 로봇만 사용 가능한 경우 - 모든 로봇 리스트를 [robots[0]]으로 변경
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\]\]', '[robots[0]]', result)
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\],\s*robots\[2\]\]', '[robots[0]]', result)
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\],\s*robots\[2\],\s*robots\[3\]\]', '[robots[0]]', result)
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\],\s*robots\[2\],\s*robots\[3\],\s*robots\[4\]\]', '[robots[0]]', result)
+        
+        # 함수 정의에서 robot_list 매개변수도 수정
+        result = re.sub(r'def\s+(\w+)\(robot_list\):\s*#\s*robot_list\s*=\s*\[robot1,\s*robot2\]', 
+                       r'def \g<1>(robot_list):\n    # robot_list = [robot1]', result)
+        result = re.sub(r'def\s+(\w+)\(robot_list\):\s*#\s*robot_list\s*=\s*\[robot1,\s*robot2,\s*robot3\]', 
+                       r'def \g<1>(robot_list):\n    # robot_list = [robot1]', result)
+        result = re.sub(r'def\s+(\w+)\(robot_list\):\s*#\s*robot_list\s*=\s*\[robot1,\s*robot2,\s*robot3,\s*robot4\]', 
+                       r'def \g<1>(robot_list):\n    # robot_list = [robot1]', result)
+        
+    elif available_robots_count == 2:
+        # 2개 로봇만 사용 가능한 경우
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\],\s*robots\[2\]\]', '[robots[0], robots[1]]', result)
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\],\s*robots\[2\],\s*robots\[3\]\]', '[robots[0], robots[1]]', result)
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\],\s*robots\[2\],\s*robots\[3\],\s*robots\[4\]\]', '[robots[0], robots[1]]', result)
+        
+        # 함수 정의에서 robot_list 매개변수도 수정
+        result = re.sub(r'def\s+(\w+)\(robot_list\):\s*#\s*robot_list\s*=\s*\[robot1,\s*robot2,\s*robot3\]', 
+                       r'def \g<1>(robot_list):\n    # robot_list = [robot1, robot2]', result)
+        result = re.sub(r'def\s+(\w+)\(robot_list\):\s*#\s*robot_list\s*=\s*\[robot1,\s*robot2,\s*robot3,\s*robot4\]', 
+                       r'def \g<1>(robot_list):\n    # robot_list = [robot1, robot2]', result)
+        
+    elif available_robots_count == 3:
+        # 3개 로봇만 사용 가능한 경우
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\],\s*robots\[2\],\s*robots\[3\]\]', '[robots[0], robots[1], robots[2]]', result)
+        result = re.sub(r'\[robots\[0\],\s*robots\[1\],\s*robots\[2\],\s*robots\[3\],\s*robots\[4\]\]', '[robots[0], robots[1], robots[2]]', result)
+        
+        # 함수 정의에서 robot_list 매개변수도 수정
+        result = re.sub(r'def\s+(\w+)\(robot_list\):\s*#\s*robot_list\s*=\s*\[robot1,\s*robot2,\s*robot3,\s*robot4\]', 
+                       r'def \g<1>(robot_list):\n    # robot_list = [robot1, robot2, robot3]', result)
+    
+    # 추가: robot_list[1], robot_list[2] 등을 사용하는 경우도 수정
+    if available_robots_count == 1:
+        # 1개 로봇만 있는 경우 robot_list[1], robot_list[2] 등을 robot_list[0]으로 변경
+        result = re.sub(r'robot_list\[1\]', 'robot_list[0]', result)
+        result = re.sub(r'robot_list\[2\]', 'robot_list[0]', result)
+        result = re.sub(r'robot_list\[3\]', 'robot_list[0]', result)
+    elif available_robots_count == 2:
+        # 2개 로봇만 있는 경우 robot_list[2], robot_list[3] 등을 robot_list[1]로 변경
+        result = re.sub(r'robot_list\[2\]', 'robot_list[1]', result)
+        result = re.sub(r'robot_list\[3\]', 'robot_list[1]', result)
+    elif available_robots_count == 3:
+        # 3개 로봇만 있는 경우 robot_list[3], robot_list[4] 등을 robot_list[2]로 변경
+        result = re.sub(r'robot_list\[3\]', 'robot_list[2]', result)
+        result = re.sub(r'robot_list\[4\]', 'robot_list[2]', result)
     
     return result
 
@@ -400,7 +471,7 @@ if __name__ == "__main__":
             _, text = LM(messages, args.model, max_tokens=1300, frequency_penalty=0.0)
 
         # 코드 후처리 적용
-        cleaned_text = clean_generated_code(text)
+        cleaned_text = clean_generated_code(text, 1)  # 분해 단계에서는 기본값 사용
         decomposed_plan.append(cleaned_text)
         
     print ("2단계: Generating Allocation Solution...")
@@ -443,7 +514,7 @@ if __name__ == "__main__":
             _, text = LM(messages, args.model, max_tokens=400, frequency_penalty=0.69)
 
         # 코드 후처리 적용
-        cleaned_text = clean_generated_code(text)
+        cleaned_text = clean_generated_code(text, len(available_robots[i]))
         allocated_plan.append(cleaned_text)
     
     print ("3단계: Generating Allocated Code...")
@@ -516,6 +587,13 @@ RULES:
 8. CRITICAL: When slicing an object, follow this sequence:
    - GoToObject(robot, 'Knife') → PickupObject(robot, 'Knife') → GoToObject(robot, 'Object') → SliceObject(robot, 'Object') → GoToObject(robot, 'CounterTop') → PutObject(robot, 'Knife', 'CounterTop') → GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Object', 'Destination')
 
+9. CRITICAL: When putting objects in openable containers (Drawer, Cabinet, Refrigerator, etc.):
+   - If multiple robots are available, coordinate the work:
+     * One robot: Pick up objects and go to container
+     * Another robot: Open the container first, then help with placing objects
+   - If only one robot: Pick up object → Go to container → Open container → Put object in container
+   - ALWAYS open the container BEFORE trying to put objects inside
+
 WORKING EXAMPLE (Toast a slice of the breadloaf):
 def toast_bread(robot_list):
     # robot_list = [robot1, robot2]
@@ -566,6 +644,29 @@ def turn_on_mobile_phone(robot_list):
 
 # Execute SubTask
 turn_on_mobile_phone([robots[0]])
+
+WORKING EXAMPLE (Put objects in drawer with cooperation):
+def put_objects_in_drawer(robot_list):
+    # robot_list = [robot1, robot2]
+    # 0: Robot1 picks up Watch
+    GoToObject(robot_list[0], 'Watch')
+    PickupObject(robot_list[0], 'Watch')
+    # 1: Robot2 opens the Drawer first
+    GoToObject(robot_list[1], 'Drawer')
+    OpenObject(robot_list[1], 'Drawer')
+    # 2: Robot1 goes to Drawer with Watch
+    GoToObject(robot_list[0], 'Drawer')
+    # 3: Robot1 puts Watch in Drawer
+    PutObject(robot_list[0], 'Watch', 'Drawer')
+    # 4: Robot2 picks up Keychain
+    GoToObject(robot_list[1], 'Keychain')
+    PickupObject(robot_list[1], 'Keychain')
+    # 5: Robot2 puts Keychain in Drawer
+    GoToObject(robot_list[1], 'Drawer')
+    PutObject(robot_list[1], 'Keychain', 'Drawer')
+
+# Execute SubTask
+put_objects_in_drawer([robots[0], robots[1]])
 
 WORKING EXAMPLE (Wash the fork and put it in the bowl):
 def wash_fork_and_put_in_bowl(robot_list):
@@ -634,7 +735,7 @@ Generate the code now:"""
             _, text = LM(messages, args.model, max_tokens=2000, frequency_penalty=0.4)
 
         # 코드 후처리 적용
-        cleaned_text = clean_generated_code(text)
+        cleaned_text = clean_generated_code(text, len(available_robots[i]))
         code_plan.append(cleaned_text)
     
     # save generated plan

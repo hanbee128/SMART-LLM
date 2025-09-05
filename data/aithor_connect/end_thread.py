@@ -98,4 +98,13 @@ if tc == 1 and ru == 1:
 
 print (f"SR:{sr}, TC:{tc}, GCR:{gcr}, Exec:{exec}, RU:{ru}")
 
-generate_video()
+# 비디오 라이터 정리
+try:
+    if 'video_writer' in globals() and video_writer is not None:
+        video_writer.release()
+        print("통합 비디오 저장 완료: 로그 폴더 내 combined_visualization.mp4")
+except NameError:
+    pass
+
+# 기존 개별 비디오 생성 기능 제거 (이미지 저장을 하지 않으므로)
+# generate_video()
