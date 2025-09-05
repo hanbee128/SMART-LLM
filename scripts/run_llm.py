@@ -231,6 +231,12 @@ def clean_generated_code(code):
     if 'def assemble_object' in result:
         result = result.replace('def assemble_object', 'def toast_bread')
     
+    # 잘못된 객체 이름 교정
+    result = result.replace("'MobilePhone'", "'CellPhone'")
+    result = result.replace("'Cellphone'", "'CellPhone'")
+    result = result.replace("'Refrigerator'", "'Fridge'")
+    result = result.replace("'PowerButton'", "'Laptop'")  # PowerButton은 존재하지 않음
+    
     return result
 
 # Function returns object list with name and properties.
@@ -485,6 +491,17 @@ def turn_on_laptop(robot_list):
 
 # Execute SubTask
 turn_on_laptop([robots[0]])
+
+WORKING EXAMPLE (Turn on the mobile phone):
+def turn_on_mobile_phone(robot_list):
+    # robot_list = [robot1]
+    # 0: Go to the Cellphone using robot1.
+    GoToObject(robot_list[0], 'Cellphone')
+    # 1: Turn on the Cellphone using robot1.
+    SwitchOn(robot_list[0], 'Cellphone')
+
+# Execute SubTask
+turn_on_mobile_phone([robots[0]])
 
 Now generate the code for this task following the same pattern:
 
