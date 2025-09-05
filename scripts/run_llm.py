@@ -513,6 +513,9 @@ RULES:
 7. CRITICAL: When putting an object somewhere, ALWAYS go to the destination first:
    - GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Object', 'Destination')
 
+8. CRITICAL: When slicing an object, follow this sequence:
+   - GoToObject(robot, 'Knife') → PickupObject(robot, 'Knife') → GoToObject(robot, 'Object') → SliceObject(robot, 'Object') → GoToObject(robot, 'CounterTop') → PutObject(robot, 'Knife', 'CounterTop') → GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Object', 'Destination')
+
 WORKING EXAMPLE (Toast a slice of the breadloaf):
 def toast_bread(robot_list):
     # robot_list = [robot1, robot2]
@@ -582,6 +585,33 @@ def wash_fork_and_put_in_bowl(robot_list):
 
 # Execute SubTask
 wash_fork_and_put_in_bowl([robots[0], robots[1]])
+
+WORKING EXAMPLE (Slice apple and throw it in the trash):
+def slice_apple_and_throw_in_trash(robot_list):
+    # robot_list = [robot1, robot2]
+    # 0: Go to the Knife using robot1.
+    GoToObject(robot_list[0], 'Knife')
+    # 1: Pick up the Knife using robot1.
+    PickupObject(robot_list[0], 'Knife')
+    # 2: Go to the Apple using robot1.
+    GoToObject(robot_list[0], 'Apple')
+    # 3: Slice the Apple using robot1.
+    SliceObject(robot_list[0], 'Apple')
+    # 4: Go to the CounterTop using robot1.
+    GoToObject(robot_list[0], 'CounterTop')
+    # 5: Put the Knife on the CounterTop using robot1.
+    PutObject(robot_list[0], 'Knife', 'CounterTop')
+    # 6: Go to the Apple using robot1.
+    GoToObject(robot_list[0], 'Apple')
+    # 7: Pick up the sliced Apple using robot1.
+    PickupObject(robot_list[0], 'Apple')
+    # 8: Go to the GarbageCan using robot1.
+    GoToObject(robot_list[0], 'GarbageCan')
+    # 9: Put the Apple in the GarbageCan using robot1.
+    PutObject(robot_list[0], 'Apple', 'GarbageCan')
+
+# Execute SubTask
+slice_apple_and_throw_in_trash([robots[0], robots[1]])
 
 Now generate the code for this task following the same pattern:
 
