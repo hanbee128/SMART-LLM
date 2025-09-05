@@ -47,6 +47,34 @@ def toast_bread(robot_list):
 toast_bread([robots[0], robots[1]])
 # Task toast a slice of the breadloaf is done
 
+# EXAMPLE 2 - Task Description: Put the apple in the fridge
+# GENERAL TASK DECOMPOSITION
+# Independent subtasks:
+# SubTask 1: Put the apple in the fridge. (Skills Required: GoToObject, PickupObject, PutObject)
+
+# TASK ALLOCATION
+robots = [{'name': 'robot1', 'skills': ['GoToObject', 'PickupObject', 'PutObject'], 'mass': 100}]
+# SOLUTION
+# For the 'Put the apple in the fridge' subtask, it requires 'GoToObject', 'PickupObject', and 'PutObject' skills.
+# Robot 1 has all the required skills.
+
+# Code Solution 
+def put_apple_in_fridge(robot_list):
+    # robot_list = [robot1]
+    # 0: SubTask 1: Put the apple in the fridge
+    # 1: Go to the Apple using robot1.
+    GoToObject(robot_list[0], 'Apple')
+    # 2: Pick up the Apple using robot1.
+    PickupObject(robot_list[0], 'Apple')
+    # 3: Go to the Fridge using robot1.
+    GoToObject(robot_list[0], 'Fridge')
+    # 4: Put the Apple in the Fridge using robot1.
+    PutObject(robot_list[0], 'Apple', 'Fridge')
+
+# Execute SubTask 1
+put_apple_in_fridge([robots[0]])
+# Task put the apple in the fridge is done
+
 
 # EXAMPLE 2 - Task Description: Put tomato in fridge 
 # GENERAL TASK DECOMPOSITION

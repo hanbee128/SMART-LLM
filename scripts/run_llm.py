@@ -217,7 +217,10 @@ def clean_generated_code(code):
             # 함수 실행 호출 패턴
             (line_stripped and '(' in line_stripped and ')' in line_stripped and 
              not line_stripped.startswith('#') and 'robot' in line_stripped.lower())):
-            cleaned_lines.append(line)
+            # 설명 주석 제거 (This code, assigns the task, which has the necessary skills 등)
+            if not (line_stripped.startswith('#') and any(phrase in line_stripped for phrase in 
+                ['This code', 'assigns the task', 'which has the necessary', 'skills', 'GoToObject', 'PickupObject', 'PutObject'])):
+                cleaned_lines.append(line)
     
     result = '\n'.join(cleaned_lines)
     
@@ -440,6 +443,8 @@ RULES:
 4. ALWAYS include the function call at the end
 5. Do NOT use ai2thor.Environment() or any other AI2Thor classes
 6. Do NOT use env.set_robot_state() or similar methods
+7. CRITICAL: When putting an object somewhere, ALWAYS go to the destination first:
+   - GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Object', 'Destination')
 
 WORKING EXAMPLE (Toast a slice of the breadloaf):
 def toast_bread(robot_list):
@@ -469,6 +474,17 @@ def toast_bread(robot_list):
 
 # Execute SubTask 1
 toast_bread([robots[0], robots[1]])
+
+WORKING EXAMPLE (Turn on the laptop):
+def turn_on_laptop(robot_list):
+    # robot_list = [robot1]
+    # 0: Go to the Laptop using robot1.
+    GoToObject(robot_list[0], 'Laptop')
+    # 1: Turn on the Laptop using robot1.
+    SwitchOn(robot_list[0], 'Laptop')
+
+# Execute SubTask
+turn_on_laptop([robots[0]])
 
 Now generate the code for this task following the same pattern:
 
