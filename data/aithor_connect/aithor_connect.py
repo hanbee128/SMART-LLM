@@ -183,59 +183,27 @@ def exec_actions():
                 num_agents = len(agent_images)
                 h, w = agent_images[0].shape[:2]
                 
-                if num_agents == 1:
-                    # 1개 에이전트: 에이전트 뷰와 Top view를 좌우로 배치
-                    combined = np.zeros((h, w*2, 3), dtype=np.uint8)
-                    combined[:, :w] = agent_images[0]
-                    combined[:, w:] = top_view_rgb
-                    
-                    # 제목 추가
-                    cv2.putText(combined, "Agent 1", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.putText(combined, "Top View", (w+10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    
-                elif num_agents == 2:
-                    # 2개 에이전트: 에이전트들을 위에, Top view를 아래에
-                    combined = np.zeros((h*2, w*2, 3), dtype=np.uint8)
-                    combined[:h, :w] = agent_images[0]
-                    combined[:h, w:] = agent_images[1]
-                    combined[h:, :w] = top_view_rgb
-                    combined[h:, w:] = np.zeros((h, w, 3), dtype=np.uint8)  # 빈 공간
-                    
-                    # 제목 추가
-                    cv2.putText(combined, "Agent 1", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.putText(combined, "Agent 2", (w+10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.putText(combined, "Top View", (10, h+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    
-                elif num_agents == 3:
-                    # 3개 에이전트: 에이전트들을 위에, Top view를 아래에
-                    combined = np.zeros((h*2, w*2, 3), dtype=np.uint8)
-                    combined[:h, :w] = agent_images[0]
-                    combined[:h, w:] = agent_images[1]
-                    combined[h:, :w] = agent_images[2]
-                    combined[h:, w:] = top_view_rgb
-                    
-                    # 제목 추가
-                    cv2.putText(combined, "Agent 1", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.putText(combined, "Agent 2", (w+10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.putText(combined, "Agent 3", (10, h+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.putText(combined, "Top View", (w+10, h+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    
-                else:  # 4개 이상
-                    # 4개 에이전트: 2x2 그리드
-                    combined = np.zeros((h*2, w*2, 3), dtype=np.uint8)
-                    combined[:h, :w] = agent_images[0]
-                    combined[:h, w:] = agent_images[1]
-                    combined[h:, :w] = agent_images[2] if len(agent_images) > 2 else np.zeros((h, w, 3), dtype=np.uint8)
-                    combined[h:, w:] = agent_images[3] if len(agent_images) > 3 else top_view_rgb
-                    
-                    # 제목 추가
-                    cv2.putText(combined, "Agent 1", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.putText(combined, "Agent 2", (w+10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.putText(combined, "Agent 3", (10, h+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    if len(agent_images) > 3:
-                        cv2.putText(combined, "Agent 4", (w+10, h+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                # 모든 로봇 수에 대해 3x2 그리드로 통일
+                combined = np.zeros((h*2, w*3, 3), dtype=np.uint8)
+                
+                # 에이전트 이미지 배치 (최대 6개)
+                positions = [
+                    (0, 0), (0, w), (0, 2*w),      # 첫 번째 행
+                    (h, 0), (h, w), (h, 2*w)        # 두 번째 행
+                ]
+                
+                for i, (y, x) in enumerate(positions):
+                    if i < len(agent_images):
+                        combined[y:y+h, x:x+w] = agent_images[i]
+                        cv2.putText(combined, f"Agent {i+1}", (x+10, y+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                    elif i == len(agent_images) and len(agent_images) < 6:
+                        # 마지막 위치에 Top View 배치
+                        combined[y:y+h, x:x+w] = top_view_rgb
+                        cv2.putText(combined, "Top View", (x+10, y+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                        break
                     else:
-                        cv2.putText(combined, "Top View", (w+10, h+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                        # 빈 공간
+                        combined[y:y+h, x:x+w] = np.zeros((h, w, 3), dtype=np.uint8)
                 
                 cv2.imshow('SMART-LLM Multi-Agent View', combined)
                 
