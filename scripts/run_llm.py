@@ -185,6 +185,113 @@ def set_api_key_for_model(model_name, api_key):
     elif "ollama" in model_name.lower():
         pass  # Ollama는 로컬이므로 API 키 불필요
 
+def calculate_robot_task_distance(robot_pos, task_objects, floor_plan_data):
+    """로봇과 태스크 객체들 간의 최단 거리 계산 (간단한 휴리스틱)"""
+    # 실제 Floor Plan 데이터가 없으므로 간단한 휴리스틱 사용
+    # 객체 이름의 길이와 복잡도를 기반으로 거리 추정
+    complexity_score = 0
+    for obj_name in task_objects:
+        complexity_score += len(obj_name) * 0.1  # 이름이 길수록 복잡
+    
+    # 랜덤 요소 추가 (실제로는 로봇 위치와 객체 위치를 비교해야 함)
+    import random
+    base_distance = 2.0 + complexity_score
+    random_factor = random.uniform(0.5, 1.5)
+    
+    return base_distance * random_factor
+
+def extract_objects_from_task(task_description):
+    """태스크 설명에서 객체 이름들을 추출"""
+    import re
+    
+    # 일반적인 객체 이름들
+    common_objects = [
+        'Watch', 'KeyChain', 'Pillow', 'Box', 'Sofa', 'Bowl', 'Vase', 'DiningTable', 
+        'Book', 'Laptop', 'Apple', 'Knife', 'Fork', 'Drawer', 'Refrigerator', 
+        'Microwave', 'Stove', 'Sink', 'CounterTop', 'Chair', 'Table', 'Bed',
+        'Television', 'RemoteControl', 'Lamp', 'GarbageCan', 'Bathtub', 'CellPhone'
+    ]
+    
+    found_objects = []
+    task_lower = task_description.lower()
+    
+    for obj in common_objects:
+        if obj.lower() in task_lower:
+            found_objects.append(obj)
+    
+    return found_objects
+
+def load_floor_plan_data(floor_plan):
+    """Floor Plan JSON 데이터 로드"""
+    import json
+    try:
+        with open(f"data/final_test/FloorPlan{floor_plan}.json", 'r') as f:
+            content = f.read()
+            # 여러 JSON 객체가 줄바꿈으로 구분된 경우 처리
+            if content.strip().startswith('{') and '\n' in content:
+                # 첫 번째 JSON 객체만 파싱 (실제 Floor Plan 데이터는 별도 파일에 있을 수 있음)
+                first_line = content.split('\n')[0]
+                return json.loads(first_line)
+            else:
+                return json.loads(content)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Floor Plan {floor_plan} 데이터를 로드할 수 없습니다: {e}")
+        return {"objects": []}
+
+def assign_robots_by_distance(robots, task_description, floor_plan, busy_robots=None):
+    """거리 기반으로 로봇 할당 (바쁜 로봇 제외)"""
+    if busy_robots is None:
+        busy_robots = set()
+    
+    # 태스크에서 객체 추출
+    task_objects = extract_objects_from_task(task_description)
+    
+    if not task_objects:
+        # 객체를 찾을 수 없으면 원래 할당 사용
+        return robots[:1] if robots else []
+    
+    # Floor Plan 데이터 로드
+    floor_plan_data = load_floor_plan_data(floor_plan)
+    
+    # 사용 가능한 로봇들 (바쁜 로봇 제외)
+    available_robots = [robot for i, robot in enumerate(robots) if i not in busy_robots]
+    
+    if not available_robots:
+        # 모든 로봇이 바쁘면 원래 할당 사용
+        return robots[:1] if robots else []
+    
+    # 각 로봇과 태스크 간의 거리 계산
+    robot_distances = []
+    for i, robot in enumerate(robots):
+        if i in busy_robots:
+            continue
+            
+        robot_pos = (0, 0, 0)  # 기본 위치 (실제로는 시뮬레이션에서 위치를 가져와야 함)
+        distance = calculate_robot_task_distance(robot_pos, task_objects, floor_plan_data)
+        robot_distances.append((i, robot, distance))
+    
+    # 거리순으로 정렬
+    robot_distances.sort(key=lambda x: x[2])
+    
+    print(f"🔍 태스크 '{task_description}'에서 발견된 객체들: {task_objects}")
+    print(f"📏 로봇 거리 순위: {[(i, f'{dist:.2f}m') for i, _, dist in robot_distances[:3]]}")
+    
+    # 가장 가까운 로봇 1-3개 선택 (태스크 복잡도에 따라)
+    if len(task_objects) == 1:
+        selected_robots = [robot_distances[0][1]]  # 단일 객체는 1개 로봇
+    elif len(task_objects) == 2:
+        # 2개 객체: 2-3개 로봇 (하나는 컨테이너 열기, 나머지는 객체 처리)
+        if len(robot_distances) >= 3:
+            selected_robots = [robot_distances[0][1], robot_distances[1][1], robot_distances[2][1]]
+        else:
+            selected_robots = [robot_distances[0][1], robot_distances[1][1]] if len(robot_distances) >= 2 else [robot_distances[0][1]]
+    else:
+        # 3개 이상 객체: 최대 3개 로봇
+        selected_robots = [robot_distances[0][1], robot_distances[1][1], robot_distances[2][1]] if len(robot_distances) >= 3 else [robot_distances[0][1], robot_distances[1][1]] if len(robot_distances) >= 2 else [robot_distances[0][1]]
+    
+    print(f"✅ 선택된 로봇들: {[robot['name'] for robot in selected_robots]}")
+    return selected_robots
+
 def clean_generated_code(code, available_robots_count=1):
     """생성된 코드에서 마크다운 블록과 불필요한 텍스트를 제거합니다."""
     import re
@@ -288,11 +395,12 @@ def clean_generated_code(code, available_robots_count=1):
     result = result.replace("PickupObject(robot_list[2], 'Water')", "FillObjectWithLiquid(robot_list[2], 'Bathtub')")
     result = result.replace("PickupObject(robot_list[3], 'Water')", "FillObjectWithLiquid(robot_list[3], 'Bathtub')")
     
+    
     # Keychain 관련 - Keychain은 존재하지 않음, CreditCard로 교정
-    result = result.replace("'Keychain'", "'CreditCard'")
-    result = result.replace("'keychain'", "'CreditCard'")
-    result = result.replace("'KeyChain'", "'CreditCard'")
-    result = result.replace("'keyChain'", "'CreditCard'")
+    result = result.replace("'Keychain'", "'KeyChain'")
+    result = result.replace("'keychain'", "'KeyChain'")
+    result = result.replace("'KeyChain'", "'KeyChain'")
+    result = result.replace("'keyChain'", "'KeyChain'")
     
     # 액션 함수 이름 교정 (AI2-THOR 정확한 액션으로)
     result = result.replace("SwitchOn(", "ToggleObjectOn(")  # SwitchOn을 ToggleObjectOn으로 교정
@@ -489,12 +597,25 @@ if __name__ == "__main__":
     prompt += "\n\n" + allocated_prompt + "\n\n"
     
     allocated_plan = []
+    busy_robots = set()  # 바쁜 로봇들 추적
+    
     for i, plan in enumerate(decomposed_plan):
-        no_robot  = len(available_robots[i])
+        # 거리 기반으로 로봇 할당
+        task_description = test_tasks[i]
+        assigned_robots = assign_robots_by_distance(robots.robots, task_description, args.floor_plan, busy_robots)
+        
+        # 할당된 로봇들을 바쁜 로봇 목록에 추가
+        for robot in assigned_robots:
+            for j, original_robot in enumerate(robots.robots):
+                if robot['name'] == original_robot['name']:
+                    busy_robots.add(j)
+                    break
+        
+        no_robot = len(assigned_robots)
         curr_prompt = prompt + plan
         curr_prompt += f"\n# TASK ALLOCATION"
         curr_prompt += f"\n# Scenario: There are {no_robot} robots available, The task should be performed using the minimum number of robots necessary. Robots should be assigned to subtasks that match its skills and mass capacity. Using your reasoning come up with a solution to satisfy all contraints."
-        curr_prompt += f"\n\nrobots = {available_robots[i]}"
+        curr_prompt += f"\n\nrobots = {assigned_robots}"
         curr_prompt += f"\n{objects_ai}"
         curr_prompt += f"\n\n# IMPORTANT: The AI should ensure that the robots assigned to the tasks have all the necessary skills to perform the tasks. IMPORTANT: Determine whether the subtasks must be performed sequentially or in parallel, or a combination of both and allocate robots based on availablitiy. "
         curr_prompt += f"\n# SOLUTION  \n"
@@ -514,7 +635,7 @@ if __name__ == "__main__":
             _, text = LM(messages, args.model, max_tokens=400, frequency_penalty=0.69)
 
         # 코드 후처리 적용
-        cleaned_text = clean_generated_code(text, len(available_robots[i]))
+        cleaned_text = clean_generated_code(text, len(assigned_robots))
         allocated_plan.append(cleaned_text)
     
     print ("3단계: Generating Allocated Code...")
@@ -535,9 +656,23 @@ if __name__ == "__main__":
     
     prompt += "\n\n" + code_prompt + "\n\n"
 
+    # 코드 생성용으로 다시 거리 기반 할당 수행
+    busy_robots_code = set()
+    
     for i, (plan, solution) in enumerate(zip(decomposed_plan,allocated_plan)):
+        # 거리 기반으로 로봇 할당 (코드 생성용)
+        task_description = test_tasks[i]
+        assigned_robots_code = assign_robots_by_distance(robots.robots, task_description, args.floor_plan, busy_robots_code)
+        
+        # 할당된 로봇들을 바쁜 로봇 목록에 추가
+        for robot in assigned_robots_code:
+            for j, original_robot in enumerate(robots.robots):
+                if robot['name'] == original_robot['name']:
+                    busy_robots_code.add(j)
+                    break
+        
         curr_prompt = f"""Task: {test_tasks[i]}
-Robots: {available_robots[i]}
+Robots: {assigned_robots_code}
 Allocation: {solution}
 
 IMPORTANT: Generate Python code using ONLY these AI2Thor action functions:
@@ -558,6 +693,7 @@ IMPORTANT: Generate Python code using ONLY these AI2Thor action functions:
 - PullObject(robot, object_name)
 - FillObjectWithLiquid(robot, object_name)
 - EmptyLiquidFromObject(robot, object_name)
+- HandoffObject(robot_from, robot_to, object_name)  # 로봇 간 물체 전달
 
 AVAILABLE OBJECTS (Use these exact names with correct capitalization):
 Furniture: Armchair, Bed, Bookcase, Cabinet, Chair, CoffeeTable, CounterTop, Desk, DiningTable, Drawer, Dresser, Ottoman, Painting, Safe, Shelf, SideTable, Sofa, TVStand
@@ -594,7 +730,55 @@ RULES:
    - If only one robot: Pick up object → Go to container → Open container → Put object in container
    - ALWAYS open the container BEFORE trying to put objects inside
 
-WORKING EXAMPLE (Toast a slice of the breadloaf):
+10. CRITICAL: For tasks requiring 3+ robots with multiple objects in one container:
+   - Robot 1: Open the container FIRST (highest priority)
+   - Robot 2: Pick up first object and go to container
+   - Robot 3: Pick up second object and go to container
+   - Then: All robots place their objects in the opened container
+   - SEQUENCE: Open → Pick up objects → Place objects (coordinate timing)
+
+WORKING EXAMPLE (Put objects in drawer with 3 robots):
+def put_objects_in_drawer_3_robots(robot_list):
+    # robot_list = [robot1, robot2, robot3]
+    # 0: Robot1 opens the Drawer FIRST (highest priority)
+    GoToObject(robot_list[0], 'Drawer')
+    OpenObject(robot_list[0], 'Drawer')
+    # 1: Robot2 picks up Watch and goes to Drawer
+    GoToObject(robot_list[1], 'Watch')
+    PickupObject(robot_list[1], 'Watch')
+    GoToObject(robot_list[1], 'Drawer')
+    # 2: Robot3 picks up KeyChain and goes to Drawer
+    GoToObject(robot_list[2], 'KeyChain')
+    PickupObject(robot_list[2], 'KeyChain')
+    GoToObject(robot_list[2], 'Drawer')
+    # 3: Robot2 puts Watch in Drawer
+    PutObject(robot_list[1], 'Watch', 'Drawer')
+    # 4: Robot3 puts KeyChain in Drawer
+    PutObject(robot_list[2], 'KeyChain', 'Drawer')
+
+WORKING EXAMPLE (Put objects in drawer with 2 robots):
+def put_objects_in_drawer_2_robots(robot_list):
+    # robot_list = [robot1, robot2]
+    # 0: Robot1 opens the Drawer FIRST
+    GoToObject(robot_list[0], 'Drawer')
+    OpenObject(robot_list[0], 'Drawer')
+    # 1: Robot1 picks up Watch
+    GoToObject(robot_list[0], 'Watch')
+    PickupObject(robot_list[0], 'Watch')
+    # 2: Robot1 puts Watch in Drawer
+    GoToObject(robot_list[0], 'Drawer')
+    PutObject(robot_list[0], 'Watch', 'Drawer')
+    # 3: Robot2 picks up KeyChain
+    GoToObject(robot_list[1], 'KeyChain')
+    PickupObject(robot_list[1], 'KeyChain')
+    # 4: Robot2 puts KeyChain in Drawer
+    GoToObject(robot_list[1], 'Drawer')
+    PutObject(robot_list[1], 'KeyChain', 'Drawer')
+
+# Execute SubTask
+put_objects_in_drawer_3_robots([robots[0], robots[1], robots[2]])
+
+ WORKING EXAMPLE (Toast a slice of the breadloaf):
 def toast_bread(robot_list):
     # robot_list = [robot1, robot2]
     # 0: SubTask 1: Toast a slice of the breadloaf
@@ -714,6 +898,22 @@ def slice_apple_and_throw_in_trash(robot_list):
 # Execute SubTask
 slice_apple_and_throw_in_trash([robots[0], robots[1]])
 
+WORKING EXAMPLE (Robot handoff when blocked):
+def efficient_object_delivery(robot_list):
+    # robot_list = [robot1, robot2]
+    # 0: Robot1 picks up object
+    GoToObject(robot_list[0], 'Apple')
+    PickupObject(robot_list[0], 'Apple')
+    # 1: Robot1 tries to go to destination
+    GoToObject(robot_list[0], 'CounterTop')
+    # 2: If Robot2 is blocking the path, handoff the object
+    # (This happens automatically in the collision detection system)
+    # 3: Robot2 continues with the task
+    PutObject(robot_list[1], 'Apple', 'CounterTop')
+
+# Execute SubTask
+efficient_object_delivery([robots[0], robots[1]])
+
 Now generate the code for this task following the same pattern:
 
 CRITICAL REQUIREMENTS:
@@ -735,7 +935,7 @@ Generate the code now:"""
             _, text = LM(messages, args.model, max_tokens=2000, frequency_penalty=0.4)
 
         # 코드 후처리 적용
-        cleaned_text = clean_generated_code(text, len(available_robots[i]))
+        cleaned_text = clean_generated_code(text, len(assigned_robots_code))
         code_plan.append(cleaned_text)
     
     # save generated plan
