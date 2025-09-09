@@ -328,6 +328,15 @@ def clean_generated_code(code, available_robots_count=1):
             if not (line_stripped.startswith('#') and any(phrase in line_stripped for phrase in 
                 ['This code', 'assigns the task', 'which has the necessary', 'skills', 'GoToObject', 'PickupObject', 'PutObject'])):
                 cleaned_lines.append(line)
+        else:
+            # 설명 텍스트나 불필요한 텍스트 제거
+            if not any(phrase in line_stripped for phrase in [
+                'Note that I\'ve followed', 'guidelines and used', 'AI2Thor action functions',
+                'included comments to explain', 'function name matches', 'executed with a single robot',
+                'This code', 'assigns the task', 'which has the necessary', 'skills',
+                'The robot will', 'First, the robot', 'Then, the robot', 'Finally, the robot'
+            ]):
+                cleaned_lines.append(line)
     
     result = '\n'.join(cleaned_lines)
     
