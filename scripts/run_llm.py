@@ -28,6 +28,7 @@ sys.path.append(".")
 
 import resources.actions as actions
 import resources.robots as robots
+from scripts.ai2_thor_controller import *
 
 
 def LM(prompt, model_name, max_tokens=128, temperature=0, stop=None, logprobs=1, frequency_penalty=0):
@@ -320,10 +321,14 @@ def clean_generated_code(code, available_robots_count=1):
     code = re.sub(r'^.*First, the robot.*$', '', code, flags=re.MULTILINE)
     code = re.sub(r'^.*Then, the robot.*$', '', code, flags=re.MULTILINE)
     code = re.sub(r'^.*Finally, the robot.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Note that I followed.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*I also included comments.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*and the function call at the end.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*used only the AI2Thor action functions.*$', '', code, flags=re.MULTILINE)
     
     # AI2Thor 액션 함수들
     ai2thor_functions = ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 
-                        'SwitchOn', 'SwitchOff', 'SliceObject', 'CleanObject', 'ThrowObject', 
+                        'ToggleObject', 'SliceObject', 'CleanObject', 'ThrowObject', 
                         'BreakObject', 'DropHandObject', 'PushObject', 'PullObject']
     
     # 모든 설명 텍스트 줄 제거 (def, import, #, 빈 줄이 아닌 모든 줄 중에서)
@@ -419,8 +424,17 @@ def clean_generated_code(code, available_robots_count=1):
     result = result.replace("'keyChain'", "'KeyChain'")
     
     # 액션 함수 이름 교정 (AI2-THOR 정확한 액션으로)
-    result = result.replace("SwitchOn(", "ToggleObjectOn(")  # SwitchOn을 ToggleObjectOn으로 교정
-    result = result.replace("SwitchOff(", "ToggleObjectOff(")  # SwitchOff를 ToggleObjectOff로 교정
+    result = result.replace("SwitchOn(", "ToggleObject(")  # SwitchOn을 ToggleObject로 교정
+    result = result.replace("SwitchOff(", "ToggleObject(")  # SwitchOff를 ToggleObject로 교정
+    result = result.replace("ToggleObjectOn(", "ToggleObject(")  # ToggleObjectOn을 ToggleObject로 교정
+    result = result.replace("ToggleObjectOff(", "ToggleObject(")  # ToggleObjectOff를 ToggleObject로 교정
+
+    # Breadloaf 관련 - Breadloaf은 존재하지 않음, Bread로 교정
+    result = result.replace("'Breadloaf'", "'Bread'")
+    result = result.replace("'breadloaf'", "'Bread'")
+    result = result.replace("'BreadLoaf'", "'Bread'")
+    result = result.replace("'breadLoaf'", "'Bread'")
+    result = result.replace("'BreadLoaf'", "'Bread'")
     
     # 로봇 수 검증 및 수정
     # 사용 가능한 로봇 수보다 많은 로봇을 요구하는 경우 수정
@@ -699,8 +713,7 @@ IMPORTANT: Generate Python code using ONLY these AI2Thor action functions:
 - PutObject(robot, target_object)
 - OpenObject(robot, object_name)
 - CloseObject(robot, object_name)
-- ToggleObjectOn(robot, object_name)  # Use ToggleObjectOn instead of SwitchOn
-- ToggleObjectOff(robot, object_name)  # Use ToggleObjectOff instead of SwitchOff
+- ToggleObject(robot, object_name)  # Toggle object on/off based on current state
 - SliceObject(robot, object_name)
 - CleanObject(robot, object_name)
 - DirtyObject(robot, object_name)
@@ -739,7 +752,7 @@ RULES:
    - GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Destination')
 
 8. CRITICAL: When slicing an object, follow this sequence:
-   - GoToObject(robot, 'Knife') → PickupObject(robot, 'Knife') → GoToObject(robot, 'Object') → SliceObject(robot, 'Object') → PutObject(robot, 'CounterTop') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Destination')
+   - GoToObject(robot, 'Knife') → PickupObject(robot, 'Knife') → GoToObject(robot, 'Object') → SliceObject(robot, 'Object') → PutObject(robot, 'Table') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Destination')
 
 9. CRITICAL: When putting objects in openable containers (Drawer, Cabinet, Refrigerator, etc.):
    - If multiple robots are available, coordinate the work:
@@ -763,7 +776,7 @@ def turn_on_laptop(robot_list):
     # 0: Go to the Laptop using robot1.
     GoToObject(robot_list[0], 'Laptop')
     # 1: Turn on the Laptop using robot1.
-    ToggleObjectOn(robot_list[0], 'Laptop')
+    ToggleObject(robot_list[0], 'Laptop')
 
 # Execute SubTask
 turn_on_laptop([robots[0]])
@@ -778,18 +791,19 @@ def slice_bread_and_toast(robot_list):
     GoToObject(robot_list[0], 'Bread')
     # 2: Slice the Bread using robot1.
     SliceObject(robot_list[0], 'Bread')
-    # Check if the Bread is sliced to BreadSlice
-    PutObject(robot_list[0], 'CounterTop')
-    PickupObject(robot_list[0], 'BreadSlice')
-    # 3: Go to the Toaster using robot1.
+    # 3: Put the knife
+    DropHandObject(robot_list[0])
+    # 4: Pick up the sliced Bread using robot1.
+    PickupObject(robot_list[0], 'BreadSliced_1')
+    # 5: Go to the Toaster using robot1.
     GoToObject(robot_list[0], 'Toaster')
-    # 4: Put the Bread in the Toaster using robot1.
+    # 6: Put the Bread in the Toaster using robot1.
     PutObject(robot_list[0], 'Toaster')
-    # 5: Turn on the Toaster using robot1.
-    ToggleObjectOn(robot_list[0], 'Toaster')
+    # 7: Turn on the Toaster using robot1.
+    ToggleObject(robot_list[0], 'Toaster')
     time.sleep(5)
-    # 6: Pick up the toasted Bread using robot1.
-    PickupObject(robot_list[0], 'BreadSlice')
+    # 8: Pick up the toasted Bread using robot1.
+    PickupObject(robot_list[0], 'BreadSliced_1')
     
 # Execute SubTask
 slice_bread_and_toast(robots[0])
@@ -849,9 +863,9 @@ def slice_apple_and_throw_in_trash(robot_list):
     GoToObject(robot_list[0], 'Apple')
     # 3: Slice the Apple using robot1.
     SliceObject(robot_list[0], 'Apple')
-     # 4: Put the Knife using robot1.
-     PutObject(robot_list[0], 'CounterTop')
-     # 5: Pick up the sliced Apple using robot1.
+    # 4: Put the Knife using robot1.
+    PutObject(robot_list[0], 'CounterTop')
+    # 5: Pick up the sliced Apple using robot1.
     PickupObject(robot_list[0], 'Apple')
     # 7: Go to the GarbageCan using robot1.
     GoToObject(robot_list[0], 'GarbageCan')
@@ -864,11 +878,29 @@ slice_apple_and_throw_in_trash(robots[0])
 
 KEY RULES:
 - If task mentions "slice of bread" or "slice of breadloaf": FIRST use GoToObject(robot_list[0], 'Knife') to slice the bread, THEN use knife to slice the bread
-- IMPORTANT: Use 'Bread' not 'Breadloaf' - AI2THOR uses 'Bread' as the object name'
-- IMPORTANT: if bread is sliced, use 'BreadSlice' not 'Bread'
-- If task mentions "toast": Use ToggleObjectOn to turn on the toaster
+- IMPORTANT: if bread is sliced, use 'BreadSliced_1'
+- if task mentions "Breadloaf", use 'Bread'
+- If task mentions "toast": Use ToggleObject to turn on the toaster
 - If task mentions "put in drawer": Use OpenObject first if the drawer is closed, then PutObject
 - If task mentions "pick up": Use GoToObject first to navigate to the object, then PickupObject
+
+AI2THOR OBJECT STATE CHANGES:
+🍳 COOKING (CookObject):
+- Egg → EggCooked (object type changes)
+- Potato → PotatoCooked (object type changes)  
+- BreadSlice → BreadSlice with isCooked=true (property changes, becomes toasted/brown)
+- Apple → Apple with isCooked=true (property changes)
+
+🔪 SLICING (SliceObject with Knife):
+- Bread → BreadSliced_1, BreadSliced_2, etc. (multiple slices created)
+- Apple → AppleSliced_1, AppleSliced_2, etc. (multiple slices created)
+- Potato → PotatoSliced_1, PotatoSliced_2, etc. (multiple slices created)
+- Tomato → TomatoSliced_1, TomatoSliced_2, etc. (multiple slices created)
+- Lettuce → LettuceSliced_1, LettuceSliced_2, etc. (multiple slices created)
+- Egg → EggCracked (when hit with knife or other objects)
+
+💥 BREAKING (BreakObject):
+- Egg → EggCracked (object breaks into cracked state)
 Now generate the code for this task following the same pattern:
 
 

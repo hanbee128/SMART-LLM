@@ -324,6 +324,32 @@ def SwitchOff(robot, sw_obj):
     
     action_queue.append({'action':'ToggleObjectOff', 'objectId':sw_obj_id, 'agent_id':agent_id})        
 
+def DropHandObject(robot):
+    robot_name = robot['name']
+    agent_id = int(robot_name[-1]) - 1
+    
+    # 손에 든 객체가 있는지 확인
+    metadata = c.last_event.events[agent_id].metadata
+    if metadata["inventoryObjects"]:
+        print(f"🤖 {robot_name}이 손에 든 객체를 떨어뜨립니다.")
+        action_queue.append({'action':'DropHandObject', 'agent_id':agent_id})
+    else:
+        print(f"ℹ️ {robot_name}이 손에 든 객체가 없습니다.")
+
+def ToggleObject(robot, obj):
+    robot_name = robot['name']
+    agent_id = int(robot_name[-1]) - 1
+    objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
+    
+    for obj_id in objs:
+        match = re.match(obj, obj_id)
+        if match is not None:
+            target_obj_id = obj_id
+            break # find the first instance
+    
+    print(f"🤖 {robot_name}이 {target_obj_id}를 토글합니다.")
+    action_queue.append({'action':'ToggleObject', 'objectId':target_obj_id, 'agent_id':agent_id})
+
 def OpenObject(robot, sw_obj):
     robot_name = robot['name']
     agent_id = int(robot_name[-1]) - 1
