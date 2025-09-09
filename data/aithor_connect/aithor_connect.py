@@ -24,10 +24,55 @@ event = c.step(action="AddThirdPartyCamera", **event.metadata["actionReturn"])
 reachable_positions_ = c.step(action="GetReachablePositions").metadata["actionReturn"]
 reachable_positions = positions_tuple = [(p["x"], p["y"], p["z"]) for p in reachable_positions_]
 
-# randomize postions of the agents
-for i in range (no_robot):
-    init_pos = random.choice(reachable_positions_)
+# 환경에 맞는 최적 로봇 배치
+def find_optimal_robot_positions(num_robots, reachable_positions):
+    """로봇들을 적절히 떨어뜨려서 장애물이 없는 공간에 배치"""
+    import math
+    
+    # 사용 가능한 위치들을 거리순으로 정렬 (중앙에서 가까운 순)
+    center = (0, 0.9, 0)  # 중앙 기준점
+    sorted_positions = sorted(reachable_positions, 
+                            key=lambda pos: math.sqrt((pos['x'] - center[0])**2 + (pos['z'] - center[2])**2))
+    
+    selected_positions = []
+    min_distance = 1.5  # 로봇 간 최소 거리 (미터)
+    
+    for pos in sorted_positions:
+        # 이미 선택된 위치들과 충분히 떨어져 있는지 확인
+        too_close = False
+        for selected in selected_positions:
+            distance = math.sqrt((pos['x'] - selected['x'])**2 + (pos['z'] - selected['z'])**2)
+            if distance < min_distance:
+                too_close = True
+                break
+        
+        if not too_close:
+            selected_positions.append(pos)
+            if len(selected_positions) >= num_robots:
+                break
+    
+    # 필요한 만큼 위치가 없으면 추가로 무작위 선택
+    while len(selected_positions) < num_robots:
+        remaining_positions = [p for p in reachable_positions if p not in selected_positions]
+        if remaining_positions:
+            selected_positions.append(random.choice(remaining_positions))
+        else:
+            break
+    
+    return selected_positions
+
+# 최적 위치 계산
+optimal_positions = find_optimal_robot_positions(no_robot, reachable_positions_)
+
+for i in range(no_robot):
+    if i < len(optimal_positions):
+        init_pos = optimal_positions[i]
+    else:
+        # 예비 위치가 부족하면 무작위 선택
+        init_pos = random.choice(reachable_positions_)
+    
     c.step(dict(action="Teleport", position=init_pos, agentId=i))
+    print(f"🤖 로봇 {i} 초기 위치: ({init_pos['x']:.1f}, {init_pos['y']:.1f}, {init_pos['z']:.1f})")
     
 objs = list([obj["objectId"] for obj in c.last_event.metadata["objects"]])
 # print (objs)
@@ -128,8 +173,8 @@ def find_avoidance_position(blocking_robot_id, moving_robot_id, target_position)
     dx = target_position[0] - blocking_pos[0]
     dz = target_position[2] - blocking_pos[2]
     
-    # 1.5미터 거리로 이동
-    avoidance_distance = 1.5
+    # 1.0미터 거리로 이동 (더 가까운 거리로 확실한 회피)
+    avoidance_distance = 1.0
     
     # 여러 방향으로 회피 위치 시도
     avoidance_candidates = []
@@ -177,15 +222,15 @@ def execute_collision_avoidance(blocking_robot_id, avoidance_position):
     """충돌 회피 실행 - 막고 있는 로봇을 옆으로 이동"""
     print(f"🔄 로봇 {blocking_robot_id}이 경로를 열기 위해 {avoidance_position}로 이동합니다.")
     
-    # 막고 있는 로봇을 회피 위치로 이동 (ObjectNavExpertAction 사용)
+    # 막고 있는 로봇을 회피 위치로 연속적으로 이동 (ObjectNavExpertAction 사용)
     action_queue.append({
         'action': 'ObjectNavExpertAction',
         'position': dict(x=avoidance_position[0], y=avoidance_position[1], z=avoidance_position[2]),
         'agent_id': blocking_robot_id
     })
     
-    # 잠시 대기
-    time.sleep(1.0)
+    # 회피 완료까지 충분한 시간 대기 (더 긴 시간으로 확실한 이동 보장)
+    time.sleep(5.0)
 
 def exec_actions():
     global total_exec, success_exec, video_writer, video_initialized
@@ -302,6 +347,24 @@ def exec_actions():
                     if multi_agent_event.metadata['errorMessage'] != "":
                         print (multi_agent_event.metadata['errorMessage'])
                     else:
+                        success_exec += 1
+                
+                elif act['action'] == 'ToggleObjectOn':
+                    total_exec += 1
+                    multi_agent_event = c.step(action="ToggleObjectOn", objectId=act['objectId'], agentId=act['agent_id'])
+                    if multi_agent_event.metadata['errorMessage'] != "":
+                        print(f"❌ ToggleObjectOn 실패: {multi_agent_event.metadata['errorMessage']}")
+                    else:
+                        print(f"✅ ToggleObjectOn 성공: {act['objectId']}가 켜졌습니다.")
+                        success_exec += 1
+                
+                elif act['action'] == 'Teleport':
+                    total_exec += 1
+                    multi_agent_event = c.step(action="Teleport", position=dict(x=act['x'], y=act['y'], z=act['z']), agentId=act['agent_id'])
+                    if multi_agent_event.metadata['errorMessage'] != "":
+                        print(f"❌ Teleport 실패: {multi_agent_event.metadata['errorMessage']}")
+                    else:
+                        print(f"✅ Teleport 성공: 로봇 {act['agent_id']}이 ({act['x']:.1f}, {act['y']:.1f}, {act['z']:.1f})로 이동했습니다.")
                         success_exec += 1
  
                 
@@ -488,35 +551,8 @@ def GoToObject(robots, dest_obj):
                 count_since_update[ia] = 0
                 
             if count_since_update[ia] < 8:
-                # 즉시 충돌 감지 및 회피
-                target_position = (crp[ia][0], crp[ia][1], crp[ia][2])
-                blocking_robot = detect_immediate_collision(agent_id, target_position)
-                
-                if blocking_robot is not None:
-                    # 바로 앞에서 막고 있는 로봇이 있음
-                    print(f"⚠️ 로봇 {agent_id}의 바로 앞에 로봇 {blocking_robot}이 막고 있습니다.")
-                    
-                    # 회피 시도 횟수 체크
-                    if blocking_robot not in avoidance_attempts:
-                        avoidance_attempts[blocking_robot] = 0
-                    
-                    if avoidance_attempts[blocking_robot] < max_avoidance_attempts:
-                        # 회피 위치 계산
-                        avoidance_pos = find_avoidance_position(blocking_robot, agent_id, target_position)
-                        if avoidance_pos is not None:
-                            # 막고 있는 로봇을 회피 위치로 이동
-                            execute_collision_avoidance(blocking_robot, avoidance_pos)
-                            avoidance_attempts[blocking_robot] += 1
-                            time.sleep(2.0)  # 회피 완료까지 대기
-                        else:
-                            print(f"❌ 로봇 {blocking_robot}의 회피 위치를 찾을 수 없습니다.")
-                    else:
-                        print(f"⚠️ 로봇 {blocking_robot}의 최대 회피 시도 횟수에 도달했습니다. 다른 전략을 사용합니다.")
-                        # 대안: 현재 로봇이 다른 경로로 우회
-                        clost_node_location[ia] += 1
-                        count_since_update[ia] = 0
-                        crp = closest_node(dest_obj_pos, reachable_positions, no_agents, clost_node_location)
-                
+                # 회피 시스템 비활성화 - 로봇들이 서로를 막지 않도록 함
+                # 대신 각 로봇이 독립적으로 경로를 찾도록 함
                 action_queue.append({'action':'ObjectNavExpertAction', 'position':dict(x=crp[ia][0], y=crp[ia][1], z=crp[ia][2]), 'agent_id':agent_id})
             else:    
                 #updating goal
@@ -570,14 +606,33 @@ def PickupObject(robots, pick_obj):
         # list of objects in the scene and their centers
         objs = list([obj["objectId"] for obj in c.last_event.metadata["objects"]])
         objs_center = list([obj["axisAlignedBoundingBox"]["center"] for obj in c.last_event.metadata["objects"]])
+        objs_metadata = c.last_event.metadata["objects"]
+        
+        pick_obj_id = None
+        dest_obj_center = None
+        pick_obj_metadata = None
         
         for idx, obj in enumerate(objs):
             match = re.match(pick_obj, obj)
             if match is not None:
                 pick_obj_id = obj
                 dest_obj_center = objs_center[idx]
+                pick_obj_metadata = objs_metadata[idx]
                 if dest_obj_center != {'x': 0.0, 'y': 0.0, 'z': 0.0}:
                     break # find the first instance
+        
+        if pick_obj_id is None:
+            print(f"❌ 객체를 찾을 수 없습니다: {pick_obj}")
+            print("🔍 사용 가능한 객체들:")
+            for obj in objs:
+                print(f"  - {obj}")
+            return
+        
+        # 객체가 집을 수 있는지 확인
+        if pick_obj_metadata and not pick_obj_metadata.get('pickupable', True):
+            print(f"❌ {pick_obj}는 집을 수 없는 객체입니다.")
+            return
+            
         # GoToObject(robot, pick_obj_id)
         # time.sleep(1)
         print ("Picking Up ", pick_obj_id, dest_obj_center)
@@ -611,17 +666,48 @@ def PutObject(robot, put_obj, recp):
     # GoToObject(robot, recp_obj_id)
     # time.sleep(1)
     
-    # 수신기가 열려있는지 확인
-    recp_is_open = False
+    # 수신기 타입에 따른 처리 - AI2THOR 메타데이터를 동적으로 활용
+    recp_obj_metadata = None
     for obj in c.last_event.metadata["objects"]:
         if re.match(recp, obj["objectId"]):
-            if "isOpen" in obj and obj["isOpen"]:
-                recp_is_open = True
-                break
+            recp_obj_metadata = obj
+            break
     
-    if not recp_is_open:
-        print(f"❌ 실패: {recp}가 닫혀있어서 {put_obj}를 배치할 수 없습니다.")
+    if recp_obj_metadata is None:
+        print(f"❌ 수신기 객체를 찾을 수 없습니다: {recp}")
         return False
+    
+    # 메타데이터에서 객체 속성 확인
+    is_openable = recp_obj_metadata.get('openable', False)
+    is_pickupable = recp_obj_metadata.get('pickupable', False)
+    is_toggleable = recp_obj_metadata.get('toggleable', False)
+    
+    # 항상 열려있는 객체들 (일반적으로 컨테이너가 아닌 표면)
+    always_open_containers = ["CounterTop", "Table", "Shelf", "Floor", "Wall", "Bowl", "Plate", "Cup", "Mug"]
+    is_always_open = any(container in recp for container in always_open_containers)
+    
+    if is_always_open:
+        # 항상 열려있는 수신기인 경우 - 바로 배치 시도
+        print(f"ℹ️ {recp}는 항상 열려있는 수신기입니다. 바로 배치를 시도합니다.")
+    elif is_openable:
+        # 열고 닫을 수 있는 수신기인 경우 - 열림 상태 확인 및 필요시 열기
+        recp_is_open = recp_obj_metadata.get('isOpen', False)
+        
+        if not recp_is_open:
+            print(f"🔓 {recp}가 닫혀있어서 열어야 합니다.")
+            # 수신기를 열기
+            open_result = c.step(action="OpenObject", objectId=recp_obj_id, agentId=agent_id)
+            if open_result.metadata['errorMessage'] != "":
+                print(f"❌ {recp} 열기 실패: {open_result.metadata['errorMessage']}")
+                return False
+            else:
+                print(f"✅ {recp}를 성공적으로 열었습니다.")
+                time.sleep(1.0)  # 열기 완료까지 대기
+        else:
+            print(f"✅ {recp}는 이미 열려있습니다.")
+    else:
+        # 열고 닫을 수 없는 수신기(테이블, 카운터 등)는 바로 진행
+        print(f"ℹ️ {recp}는 열고 닫을 수 없는 수신기입니다. 바로 배치를 시도합니다.")
     
     # PutObject 액션 실행
     print(f"PutObject 시도: {put_obj} -> {recp}")
@@ -794,6 +880,95 @@ def BreakObject(robot, sw_obj):
     time.sleep(1)
     action_queue.append({'action':'BreakObject', 'objectId':sw_obj_id, 'agent_id':agent_id}) 
     time.sleep(1)
+
+def ToggleObjectOn(robot, toggle_obj):
+    """객체를 켜는 함수"""
+    
+    robot_name = robot['name']
+    agent_id = int(robot_name[-1]) - 1
+    objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
+    objs_metadata = c.last_event.metadata["objects"]
+    
+    toggle_obj_id = None
+    toggle_obj_metadata = None
+    
+    for idx, obj in enumerate(objs):
+        match = re.match(toggle_obj, obj)
+        if match is not None:
+            toggle_obj_id = obj
+            toggle_obj_metadata = objs_metadata[idx]
+            break # find the first instance
+    
+    if toggle_obj_id is None:
+        print(f"❌ 객체를 찾을 수 없습니다: {toggle_obj}")
+        return
+    
+    # 객체가 토글 가능한지 확인
+    if toggle_obj_metadata and not toggle_obj_metadata.get('toggleable', False):
+        print(f"❌ {toggle_obj}는 토글할 수 없는 객체입니다.")
+        return
+    
+    # 이미 켜져있는지 확인
+    if toggle_obj_metadata and toggle_obj_metadata.get('isToggled', False):
+        print(f"ℹ️ {toggle_obj}는 이미 켜져있습니다.")
+        return
+    
+    GoToObject(robot, toggle_obj_id)
+    time.sleep(1)
+    print(f"Toggle On: {toggle_obj}")
+    action_queue.append({'action':'ToggleObjectOn', 'objectId':toggle_obj_id, 'agent_id':agent_id})
+    time.sleep(1)
+    
+    # ToggleObjectOn 액션 실행
+    multi_agent_event = c.step(action="ToggleObjectOn", objectId=toggle_obj_id, agentId=agent_id)
+    if multi_agent_event.metadata['errorMessage'] != "":
+        print(f"❌ 실패: {toggle_obj} 켜기 실패 - {multi_agent_event.metadata['errorMessage']}")
+    else:
+        print(f"✅ 성공: {toggle_obj}가 켜졌습니다.")
+
+def ToggleObjectOff(robot, toggle_obj):
+    """객체를 끄는 함수"""
+    robot_name = robot['name']
+    agent_id = int(robot_name[-1]) - 1
+    objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
+    objs_metadata = c.last_event.metadata["objects"]
+    
+    toggle_obj_id = None
+    toggle_obj_metadata = None
+    
+    for idx, obj in enumerate(objs):
+        match = re.match(toggle_obj, obj)
+        if match is not None:
+            toggle_obj_id = obj
+            toggle_obj_metadata = objs_metadata[idx]
+            break # find the first instance
+    
+    if toggle_obj_id is None:
+        print(f"❌ 객체를 찾을 수 없습니다: {toggle_obj}")
+        return
+    
+    # 객체가 토글 가능한지 확인
+    if toggle_obj_metadata and not toggle_obj_metadata.get('toggleable', False):
+        print(f"❌ {toggle_obj}는 토글할 수 없는 객체입니다.")
+        return
+    
+    # 이미 꺼져있는지 확인
+    if toggle_obj_metadata and not toggle_obj_metadata.get('isToggled', True):
+        print(f"ℹ️ {toggle_obj}는 이미 꺼져있습니다.")
+        return
+    
+    GoToObject(robot, toggle_obj_id)
+    time.sleep(1)
+    print(f"Toggle Off: {toggle_obj}")
+    action_queue.append({'action':'ToggleObjectOff', 'objectId':toggle_obj_id, 'agent_id':agent_id})
+    time.sleep(1)
+    
+    # ToggleObjectOff 액션 실행
+    multi_agent_event = c.step(action="ToggleObjectOff", objectId=toggle_obj_id, agentId=agent_id)
+    if multi_agent_event.metadata['errorMessage'] != "":
+        print(f"❌ 실패: {toggle_obj} 끄기 실패 - {multi_agent_event.metadata['errorMessage']}")
+    else:
+        print(f"✅ 성공: {toggle_obj}가 꺼졌습니다.")
     
 def SliceObject(robot, sw_obj):
     print ("Slicing: ", sw_obj)

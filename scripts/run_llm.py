@@ -301,18 +301,36 @@ def clean_generated_code(code, available_robots_count=1):
     code = re.sub(r'```\s*$', '', code)
     code = re.sub(r'```.*?\n', '', code, flags=re.DOTALL)
     
+    # LLM이 생성한 설명 텍스트 제거
+    code = re.sub(r'Here is the generated code for the task.*?\n', '', code, flags=re.DOTALL)
+    code = re.sub(r'Here is the generated code for Task.*?\n', '', code, flags=re.DOTALL)
+    code = re.sub(r'Note that I\'ve followed.*?\n', '', code, flags=re.DOTALL)
+    code = re.sub(r'This code.*?\n', '', code, flags=re.DOTALL)
+    code = re.sub(r'The robot will.*?\n', '', code, flags=re.DOTALL)
+    code = re.sub(r'First, the robot.*?\n', '', code, flags=re.DOTALL)
+    code = re.sub(r'Then, the robot.*?\n', '', code, flags=re.DOTALL)
+    code = re.sub(r'Finally, the robot.*?\n', '', code, flags=re.DOTALL)
+    
+    # 추가 설명 텍스트 패턴들
+    code = re.sub(r'^.*Here is the generated code.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Here is the generated Python code.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Note that I\'ve followed.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*This code.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*The robot will.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*First, the robot.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Then, the robot.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Finally, the robot.*$', '', code, flags=re.MULTILINE)
+    
     # AI2Thor 액션 함수들
     ai2thor_functions = ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 
                         'SwitchOn', 'SwitchOff', 'SliceObject', 'CleanObject', 'ThrowObject', 
                         'BreakObject', 'DropHandObject', 'PushObject', 'PullObject']
     
+    # 모든 설명 텍스트 줄 제거 (def, import, #, 빈 줄이 아닌 모든 줄 중에서)
     lines = code.split('\n')
     cleaned_lines = []
-    
     for line in lines:
         line_stripped = line.strip()
-        
-        # 유지할 줄들
         if (not line_stripped or  # 빈 줄
             line_stripped.startswith(('def ', 'import ', 'from ', 'class ', '#', '    ', '\t')) or  # 함수 정의, import, 주석, 들여쓰기
             any(line_stripped.startswith(func) for func in ai2thor_functions) or  # AI2Thor 함수 호출
@@ -324,19 +342,8 @@ def clean_generated_code(code, available_robots_count=1):
             # 함수 실행 호출 패턴
             (line_stripped and '(' in line_stripped and ')' in line_stripped and 
              not line_stripped.startswith('#') and 'robot' in line_stripped.lower())):
-            # 설명 주석 제거 (This code, assigns the task, which has the necessary skills 등)
-            if not (line_stripped.startswith('#') and any(phrase in line_stripped for phrase in 
-                ['This code', 'assigns the task', 'which has the necessary', 'skills', 'GoToObject', 'PickupObject', 'PutObject'])):
-                cleaned_lines.append(line)
-        else:
-            # 설명 텍스트나 불필요한 텍스트 제거
-            if not any(phrase in line_stripped for phrase in [
-                'Note that I\'ve followed', 'guidelines and used', 'AI2Thor action functions',
-                'included comments to explain', 'function name matches', 'executed with a single robot',
-                'This code', 'assigns the task', 'which has the necessary', 'skills',
-                'The robot will', 'First, the robot', 'Then, the robot', 'Finally, the robot'
-            ]):
-                cleaned_lines.append(line)
+            cleaned_lines.append(line)
+        # 설명 텍스트는 제거 (위 조건에 맞지 않는 모든 줄)
     
     result = '\n'.join(cleaned_lines)
     
@@ -685,6 +692,8 @@ Robots: {assigned_robots_code}
 Allocation: {solution}
 
 IMPORTANT: Generate Python code using ONLY these AI2Thor action functions:
+- Use ALL assigned robots: {len(assigned_robots_code)} robots are assigned
+- Function call should be: function_name([robots[0], robots[1], ...]) with {len(assigned_robots_code)} robots
 - GoToObject(robot, object_name)
 - PickupObject(robot, object_name) 
 - PutObject(robot, object_name, target_object)
