@@ -286,7 +286,7 @@ def exec_actions():
  
                 elif act['action'] == 'PutObject':
                     total_exec += 1
-                    multi_agent_event = c.step(action="PutObject", objectId=act['objectId'], agentId=act['agent_id'], forceAction=True)
+                    multi_agent_event = c.step(action="PutObject", agentId=act['agent_id'], forceAction=True)
                     if multi_agent_event.metadata['errorMessage'] != "":
                         print (multi_agent_event.metadata['errorMessage'])
                     else:
@@ -639,7 +639,7 @@ def PickupObject(robots, pick_obj):
         action_queue.append({'action':'PickupObject', 'objectId':pick_obj_id, 'agent_id':agent_id})
         time.sleep(1)
     
-def PutObject(robot, put_obj, recp):
+def PutObject(robot, recp):
     robot_name = robot['name']
     agent_id = int(robot_name[-1]) - 1
     objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
@@ -710,7 +710,7 @@ def PutObject(robot, put_obj, recp):
         print(f"ℹ️ {recp}는 열고 닫을 수 없는 수신기입니다. 바로 배치를 시도합니다.")
     
     # PutObject 액션 실행
-    print(f"PutObject 시도: {put_obj} -> {recp}")
+    print(f"PutObject 시도: 손에 든 객체 -> {recp}")
     action_queue.append({'action':'PutObject', 'objectId':recp_obj_id, 'agent_id':agent_id})
     time.sleep(1)
     
@@ -727,19 +727,13 @@ def PutObject(robot, put_obj, recp):
                     recp_objects = obj["receptacleObjectIds"]
                     break
         
-        # 배치하려던 객체가 수신기 내부에 있는지 확인
-        object_placed = False
-        for recp_obj in recp_objects:
-            if re.match(put_obj, recp_obj):
-                object_placed = True
-                break
-        
-        if object_placed:
-            print(f"✅ 성공: {put_obj}가 {recp}에 배치됨")
+        # 배치 결과 확인
+        if recp_objects:
+            print(f"✅ 성공: 객체가 {recp}에 배치됨")
+            print(f"수신기 내부 객체들: {recp_objects}")
             return True
         else:
-            print(f"❌ 실패: {put_obj}가 {recp}에 배치되지 않음")
-            print(f"수신기 내부 객체들: {recp_objects}")
+            print(f"❌ 실패: 객체가 {recp}에 배치되지 않음")
             return False
             
     except Exception as e:
@@ -976,16 +970,26 @@ def SliceObject(robot, sw_obj):
     agent_id = int(robot_name[-1]) - 1
     objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
     
+    sw_obj_id = None
     for obj in objs:
         match = re.match(sw_obj, obj)
         if match is not None:
             sw_obj_id = obj
             break # find the first instance
+    
+    if sw_obj_id is None:
+        print(f"❌ 객체를 찾을 수 없습니다: {sw_obj}")
+        print("🔍 사용 가능한 객체들:")
+        for obj in objs:
+            print(f"  - {obj}")
+        return
+    
     GoToObject(robot, sw_obj_id)
     time.sleep(1)
     action_queue.append({'action':'SliceObject', 'objectId':sw_obj_id, 'agent_id':agent_id})      
     time.sleep(1)
     
+
 def CleanObject(robot, sw_obj):
     robot_name = robot['name']
     agent_id = int(robot_name[-1]) - 1

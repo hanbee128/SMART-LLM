@@ -696,7 +696,7 @@ IMPORTANT: Generate Python code using ONLY these AI2Thor action functions:
 - Function call should be: function_name([robots[0], robots[1], ...]) with {len(assigned_robots_code)} robots
 - GoToObject(robot, object_name)
 - PickupObject(robot, object_name) 
-- PutObject(robot, object_name, target_object)
+- PutObject(robot, target_object)
 - OpenObject(robot, object_name)
 - CloseObject(robot, object_name)
 - ToggleObjectOn(robot, object_name)  # Use ToggleObjectOn instead of SwitchOn
@@ -736,10 +736,10 @@ RULES:
 5. Do NOT use ai2thor.Environment() or any other AI2Thor classes
 6. Do NOT use env.set_robot_state() or similar methods
 7. CRITICAL: When putting an object somewhere, ALWAYS go to the destination first:
-   - GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Object', 'Destination')
+   - GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Destination')
 
 8. CRITICAL: When slicing an object, follow this sequence:
-   - GoToObject(robot, 'Knife') → PickupObject(robot, 'Knife') → GoToObject(robot, 'Object') → SliceObject(robot, 'Object') → GoToObject(robot, 'CounterTop') → PutObject(robot, 'Knife', 'CounterTop') → GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Object', 'Destination')
+   - GoToObject(robot, 'Knife') → PickupObject(robot, 'Knife') → GoToObject(robot, 'Object') → SliceObject(robot, 'Object') → PutObject(robot, 'CounterTop') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Destination')
 
 9. CRITICAL: When putting objects in openable containers (Drawer, Cabinet, Refrigerator, etc.):
    - If multiple robots are available, coordinate the work:
@@ -755,75 +755,7 @@ RULES:
    - Then: All robots place their objects in the opened container
    - SEQUENCE: Open → Pick up objects → Place objects (coordinate timing)
 
-WORKING EXAMPLE (Put objects in drawer with 3 robots):
-def put_objects_in_drawer_3_robots(robot_list):
-    # robot_list = [robot1, robot2, robot3]
-    # 0: Robot1 opens the Drawer FIRST (highest priority)
-    GoToObject(robot_list[0], 'Drawer')
-    OpenObject(robot_list[0], 'Drawer')
-    # 1: Robot2 picks up Watch and goes to Drawer
-    GoToObject(robot_list[1], 'Watch')
-    PickupObject(robot_list[1], 'Watch')
-    GoToObject(robot_list[1], 'Drawer')
-    # 2: Robot3 picks up KeyChain and goes to Drawer
-    GoToObject(robot_list[2], 'KeyChain')
-    PickupObject(robot_list[2], 'KeyChain')
-    GoToObject(robot_list[2], 'Drawer')
-    # 3: Robot2 puts Watch in Drawer
-    PutObject(robot_list[1], 'Watch', 'Drawer')
-    # 4: Robot3 puts KeyChain in Drawer
-    PutObject(robot_list[2], 'KeyChain', 'Drawer')
 
-WORKING EXAMPLE (Put objects in drawer with 2 robots):
-def put_objects_in_drawer_2_robots(robot_list):
-    # robot_list = [robot1, robot2]
-    # 0: Robot1 opens the Drawer FIRST
-    GoToObject(robot_list[0], 'Drawer')
-    OpenObject(robot_list[0], 'Drawer')
-    # 1: Robot1 picks up Watch
-    GoToObject(robot_list[0], 'Watch')
-    PickupObject(robot_list[0], 'Watch')
-    # 2: Robot1 puts Watch in Drawer
-    GoToObject(robot_list[0], 'Drawer')
-    PutObject(robot_list[0], 'Watch', 'Drawer')
-    # 3: Robot2 picks up KeyChain
-    GoToObject(robot_list[1], 'KeyChain')
-    PickupObject(robot_list[1], 'KeyChain')
-    # 4: Robot2 puts KeyChain in Drawer
-    GoToObject(robot_list[1], 'Drawer')
-    PutObject(robot_list[1], 'KeyChain', 'Drawer')
-
-# Execute SubTask
-put_objects_in_drawer_3_robots([robots[0], robots[1], robots[2]])
-
- WORKING EXAMPLE (Toast a slice of the breadloaf):
-def toast_bread(robot_list):
-    # robot_list = [robot1, robot2]
-    # 0: SubTask 1: Toast a slice of the breadloaf
-    # 1: Go to the Bread using robot2.
-    GoToObject(robot_list[1], 'Bread')
-    # 2: Pick up the Bread using robot2.
-    PickupObject(robot_list[1], 'Bread')
-    # 3: Go to the Toaster using robot2.
-    GoToObject(robot_list[1], 'Toaster')
-    # 4: Put the Bread in the Toaster using robot2.
-    PutObject(robot_list[1], 'Bread', 'Toaster')
-    # 5: Turn on the Toaster using robot1.
-    GoToObject(robot_list[0], 'Toaster')
-    ToggleObjectOn(robot_list[0], 'Toaster')
-    # 6: Wait for the bread to toast.
-    time.sleep(5)
-    # 7: Turn off the Toaster using robot1.
-    ToggleObjectOff(robot_list[0], 'Toaster')
-    # 8: Pick up the toasted Bread using robot2.
-    PickupObject(robot_list[1], 'Bread')
-    # 9: Go to the CounterTop using robot2.
-    GoToObject(robot_list[1], 'CounterTop')
-    # 10: Put the toasted Bread on the CounterTop using robot2.
-    PutObject(robot_list[1], 'Bread', 'CounterTop')
-
-# Execute SubTask 1
-toast_bread([robots[0], robots[1]])
 
 WORKING EXAMPLE (Turn on the laptop):
 def turn_on_laptop(robot_list):
@@ -836,43 +768,60 @@ def turn_on_laptop(robot_list):
 # Execute SubTask
 turn_on_laptop([robots[0]])
 
-WORKING EXAMPLE (Turn on the mobile phone):
-def turn_on_mobile_phone(robot_list):
+WORKING EXAMPLE (Slice the bread and toast it):
+def slice_bread_and_toast(robot_list):
     # robot_list = [robot1]
-    # 0: Go to the CellPhone using robot1.
-    GoToObject(robot_list[0], 'CellPhone')
-    # 1: Turn on the CellPhone using robot1.
-    ToggleObjectOn(robot_list[0], 'CellPhone')
-
+    # 0: Go to the knife using robot1.
+    GoToObject(robot_list[0], 'Knife')
+    PickupObject(robot_list[0], 'Knife')
+    # 1: Go to the Bread using robot1.
+    GoToObject(robot_list[0], 'Bread')
+    # 2: Slice the Bread using robot1.
+    SliceObject(robot_list[0], 'Bread')
+    # Check if the Bread is sliced to BreadSlice
+    PutObject(robot_list[0], 'CounterTop')
+    PickupObject(robot_list[0], 'BreadSlice')
+    # 3: Go to the Toaster using robot1.
+    GoToObject(robot_list[0], 'Toaster')
+    # 4: Put the Bread in the Toaster using robot1.
+    PutObject(robot_list[0], 'Toaster')
+    # 5: Turn on the Toaster using robot1.
+    ToggleObjectOn(robot_list[0], 'Toaster')
+    time.sleep(5)
+    # 6: Pick up the toasted Bread using robot1.
+    PickupObject(robot_list[0], 'BreadSlice')
+    
 # Execute SubTask
-turn_on_mobile_phone([robots[0]])
+slice_bread_and_toast(robots[0])
+    
 
 WORKING EXAMPLE (Put objects in drawer with cooperation):
 def put_objects_in_drawer(robot_list):
-    # robot_list = [robot1, robot2]
-    # 0: Robot1 picks up Watch
+    # robot_list = [robot1, robot2, robot3]
+    # pick drawer1 first
+    # 0: Robot2 opens the Drawer1 first
+    GoToObject(robot_list[1], 'Drawer1')
+    OpenObject(robot_list[1], 'Drawer1')
+    # 1: Robot1 picks up Watch
     GoToObject(robot_list[0], 'Watch')
     PickupObject(robot_list[0], 'Watch')
-    # 1: Robot2 opens the Drawer first
-    GoToObject(robot_list[1], 'Drawer')
-    OpenObject(robot_list[1], 'Drawer')
-    # 2: Robot1 goes to Drawer with Watch
-    GoToObject(robot_list[0], 'Drawer')
-    # 3: Robot1 puts Watch in Drawer
-    PutObject(robot_list[0], 'Watch', 'Drawer')
+    # 2: Robot1 goes to Drawer1 with Watch
+    GoToObject(robot_list[0], 'Drawer1')
+    # 3: Robot1 puts Watch in Drawer1
+    PutObject(robot_list[0], 'Drawer1')
     # 4: Robot2 picks up Keychain
-    GoToObject(robot_list[1], 'Keychain')
-    PickupObject(robot_list[1], 'Keychain')
-    # 5: Robot2 puts Keychain in Drawer
-    GoToObject(robot_list[1], 'Drawer')
-    PutObject(robot_list[1], 'Keychain', 'Drawer')
+    GoToObject(robot_list[2], 'Keychain')
+    PickupObject(robot_list[2], 'Keychain')
+    # 5: Robot2 puts Keychain in Drawer1
+    GoToObject(robot_list[2], 'Drawer1')
+    PutObject(robot_list[2], 'Drawer1')
 
 # Execute SubTask
-put_objects_in_drawer([robots[0], robots[1]])
+put_objects_in_drawer([robots[0], robots[1], robots[2]])
 
 WORKING EXAMPLE (Wash the fork and put it in the bowl):
 def wash_fork_and_put_in_bowl(robot_list):
-    # robot_list = [robot1, robot2]
+    # robot_list = [robot1]
     # 0: Go to the Fork using robot1.
     GoToObject(robot_list[0], 'Fork')
     # 1: Pick up the Fork using robot1.
@@ -884,14 +833,14 @@ def wash_fork_and_put_in_bowl(robot_list):
     # 4: Go to the Bowl using robot1.
     GoToObject(robot_list[0], 'Bowl')
     # 5: Put the Fork in the Bowl using robot1.
-    PutObject(robot_list[0], 'Fork', 'Bowl')
+    PutObject(robot_list[0], 'Bowl')
 
 # Execute SubTask
-wash_fork_and_put_in_bowl([robots[0], robots[1]])
+wash_fork_and_put_in_bowl(robots[0])
 
 WORKING EXAMPLE (Slice apple and throw it in the trash):
 def slice_apple_and_throw_in_trash(robot_list):
-    # robot_list = [robot1, robot2]
+    # robot_list = [robot1]
     # 0: Go to the Knife using robot1.
     GoToObject(robot_list[0], 'Knife')
     # 1: Pick up the Knife using robot1.
@@ -900,39 +849,28 @@ def slice_apple_and_throw_in_trash(robot_list):
     GoToObject(robot_list[0], 'Apple')
     # 3: Slice the Apple using robot1.
     SliceObject(robot_list[0], 'Apple')
-    # 4: Go to the CounterTop using robot1.
-    GoToObject(robot_list[0], 'CounterTop')
-    # 5: Put the Knife on the CounterTop using robot1.
-    PutObject(robot_list[0], 'Knife', 'CounterTop')
-    # 6: Go to the Apple using robot1.
-    GoToObject(robot_list[0], 'Apple')
-    # 7: Pick up the sliced Apple using robot1.
+     # 4: Put the Knife using robot1.
+     PutObject(robot_list[0], 'CounterTop')
+     # 5: Pick up the sliced Apple using robot1.
     PickupObject(robot_list[0], 'Apple')
-    # 8: Go to the GarbageCan using robot1.
+    # 7: Go to the GarbageCan using robot1.
     GoToObject(robot_list[0], 'GarbageCan')
-    # 9: Put the Apple in the GarbageCan using robot1.
-    PutObject(robot_list[0], 'Apple', 'GarbageCan')
+    # 8: Put the Apple in the GarbageCan using robot1.
+    PutObject(robot_list[0], 'GarbageCan')
 
 # Execute SubTask
-slice_apple_and_throw_in_trash([robots[0], robots[1]])
+slice_apple_and_throw_in_trash(robots[0])
 
-WORKING EXAMPLE (Robot handoff when blocked):
-def efficient_object_delivery(robot_list):
-    # robot_list = [robot1, robot2]
-    # 0: Robot1 picks up object
-    GoToObject(robot_list[0], 'Apple')
-    PickupObject(robot_list[0], 'Apple')
-    # 1: Robot1 tries to go to destination
-    GoToObject(robot_list[0], 'CounterTop')
-    # 2: If Robot2 is blocking the path, handoff the object
-    # (This happens automatically in the collision detection system)
-    # 3: Robot2 continues with the task
-    PutObject(robot_list[1], 'Apple', 'CounterTop')
 
-# Execute SubTask
-efficient_object_delivery([robots[0], robots[1]])
-
+KEY RULES:
+- If task mentions "slice of bread" or "slice of breadloaf": FIRST use GoToObject(robot_list[0], 'Knife') to slice the bread, THEN use knife to slice the bread
+- IMPORTANT: Use 'Bread' not 'Breadloaf' - AI2THOR uses 'Bread' as the object name'
+- IMPORTANT: if bread is sliced, use 'BreadSlice' not 'Bread'
+- If task mentions "toast": Use ToggleObjectOn to turn on the toaster
+- If task mentions "put in drawer": Use OpenObject first if the drawer is closed, then PutObject
+- If task mentions "pick up": Use GoToObject first to navigate to the object, then PickupObject
 Now generate the code for this task following the same pattern:
+
 
 CRITICAL REQUIREMENTS:
 1. The function name must match the task description (e.g., toast_bread, put_mug_in_coffee_machine)
@@ -941,6 +879,7 @@ CRITICAL REQUIREMENTS:
 4. Include the function call at the end: function_name([robots[0], robots[1]])
 5. Each action must be on a separate line with comments
 6. Do NOT generate generic function names like "assemble_object" or "task_function"
+
 
 Generate the code now:"""
         
