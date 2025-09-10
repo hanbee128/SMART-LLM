@@ -88,24 +88,7 @@ action_queue = []
 task_over = False
 
 def exec_actions():
-    # delete if current output already exist
-    cur_path = os.path.dirname(__file__) + "/*/"
-    for x in glob(cur_path, recursive = True):
-        shutil.rmtree (x)
-    
-    # create new folders to save the images from the agents
-    for i in range(no_robot):
-        folder_name = "agent_" + str(i+1)
-        folder_path = os.path.dirname(__file__) + "/" + folder_name
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
-    
-    # create folder to store the top view images
-    folder_name = "top_view"
-    folder_path = os.path.dirname(__file__) + "/" + folder_name
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
-    
+    # 이미지 저장 기능 제거됨
     img_counter = 0
     
     while not task_over:
@@ -160,12 +143,8 @@ def exec_actions():
                 
             for i,e in enumerate(multi_agent_event.events):
                 cv2.imshow('agent%s' % i, e.cv2img)
-                f_name = os.path.dirname(__file__) + "/agent_" + str(i+1) + "/img_" + str(img_counter).zfill(5) + ".png"
-                cv2.imwrite(f_name, e.cv2img)
             top_view_rgb = cv2.cvtColor(c.last_event.events[0].third_party_camera_frames[-1], cv2.COLOR_BGR2RGB)
             cv2.imshow('Top View', top_view_rgb)
-            f_name = os.path.dirname(__file__) + "/top_view/img_" + str(img_counter).zfill(5) + ".png"
-            cv2.imwrite(f_name, e.cv2img)
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
             

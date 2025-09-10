@@ -5,9 +5,7 @@ import time
 total_exec = 0
 success_exec = 0
 
-# 비디오 라이터 초기화
-video_writer = None
-video_initialized = False
+# 이미지 저장 기능 제거됨
 
 c = Controller( height=600, width=600)
 c.reset("FloorPlan" + str(floor_no)) 
@@ -233,23 +231,7 @@ def execute_collision_avoidance(blocking_robot_id, avoidance_position):
     time.sleep(5.0)
 
 def exec_actions():
-    global total_exec, success_exec, video_writer, video_initialized
-    # delete if current output already exist
-    cur_path = os.path.dirname(__file__) + "/*/"
-    for x in glob(cur_path, recursive = True):
-        shutil.rmtree (x)
-    
-    # 이미지 저장 기능 제거로 폴더 생성 불필요
-    # for i in range(no_robot):
-    #     folder_name = "agent_" + str(i+1)
-    #     folder_path = os.path.dirname(__file__) + "/" + folder_name
-    #     if not os.path.exists(folder_path):
-    #         os.makedirs(folder_path)
-    
-    # folder_name = "top_view"
-    # folder_path = os.path.dirname(__file__) + "/" + folder_name
-    # if not os.path.exists(folder_path):
-    #     os.makedirs(folder_path)
+    global total_exec, success_exec
     
     img_counter = 0
     
@@ -384,63 +366,9 @@ def exec_actions():
             except Exception as e:
                 print (e)
                 
-            # 각 에이전트 이미지 수집 (저장하지 않음)
-            agent_images = []
+            # 간단한 시각화만 표시 (이미지 저장 없음)
             for i,e in enumerate(multi_agent_event.events):
-                agent_images.append(e.cv2img)
-            
-            # Top view 이미지 수집 (저장하지 않음)
-            top_view_rgb = cv2.cvtColor(c.last_event.events[0].third_party_camera_frames[-1], cv2.COLOR_BGR2RGB)
-            
-            # 모든 시각화를 하나의 창에 분할로 표시
-            if agent_images:
-                num_agents = len(agent_images)
-                h, w = agent_images[0].shape[:2]
-                
-                # 모든 로봇 수에 대해 3x2 그리드로 통일
-                combined = np.zeros((h*2, w*3, 3), dtype=np.uint8)
-                
-                # 에이전트 이미지 배치 (최대 6개)
-                positions = [
-                    (0, 0), (0, w), (0, 2*w),      # 첫 번째 행
-                    (h, 0), (h, w), (h, 2*w)        # 두 번째 행
-                ]
-                
-                for i, (y, x) in enumerate(positions):
-                    if i < len(agent_images):
-                        combined[y:y+h, x:x+w] = agent_images[i]
-                        cv2.putText(combined, f"Agent {i+1}", (x+10, y+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    elif i == len(agent_images) and len(agent_images) < 6:
-                        # 마지막 위치에 Top View 배치
-                        combined[y:y+h, x:x+w] = top_view_rgb
-                        cv2.putText(combined, "Top View", (x+10, y+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                        break
-                    else:
-                        # 빈 공간
-                        combined[y:y+h, x:x+w] = np.zeros((h, w, 3), dtype=np.uint8)
-                
-                cv2.imshow('SMART-LLM Multi-Agent View', combined)
-                
-                # 통합 화면을 비디오로 저장
-                if not video_initialized:
-                    try:
-                        # 현재 로그 폴더 경로 찾기 (glob 모듈 충돌 방지)
-                        import glob as glob_module
-                        log_folders = glob_module.glob(os.path.join(os.getcwd(), "logs", "*"))
-                        latest_log_folder = max(log_folders, key=os.path.getctime) if log_folders else os.getcwd()
-                        
-                        # 비디오 파일 경로 설정 (로그 폴더 내)
-                        video_path = os.path.join(latest_log_folder, "combined_visualization.mp4")
-                        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                        fps = 25
-                        video_writer = cv2.VideoWriter(video_path, fourcc, fps, (combined.shape[1], combined.shape[0]))
-                        video_initialized = True
-                        print(f"비디오 저장 시작: {video_path}")
-                    except Exception as e:
-                        print(f"비디오 라이터 초기화 실패: {e}")
-                
-                if video_writer is not None:
-                    video_writer.write(combined)
+                cv2.imshow(f'Agent {i+1}', e.cv2img)
             
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
