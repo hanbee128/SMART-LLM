@@ -1,2 +1,1 @@
-
-{"task": "Toast a slice of the breadloaf", "robot list" : [24,25,26], "object_states" : [{"name": "Toaster", "contains": ["BreadSliced"], "state": "ON"}], "trans":0, "max_trans":1}
+{"task": "Toast a slice of the breadloaf", "robot list" : [24,25,26], "object_states" : [{"name": "Bread", "contains": [], "state": "COOKED"}], "trans":0, "max_trans":1}

@@ -143,6 +143,15 @@ def exec_actions():
                 elif act['action'] == 'ToggleObjectOff':
                     multi_agent_event = c.step(action="ToggleObjectOff", objectId=act['objectId'], agentId=act['agent_id'], forceAction=True)
                 
+                elif act['action'] == 'DropHandObject':
+                    total_exec += 1
+                    multi_agent_event = c.step(action="DropHandObject", agentId=act['agent_id'], forceAction=True)
+                    if multi_agent_event.metadata['errorMessage'] != "":
+                        print(f"❌ DropHandObject 실패: {multi_agent_event.metadata['errorMessage']}")
+                    else:
+                        print(f"✅ DropHandObject 성공: 로봇 {act['agent_id']}이 손에 들고 있던 객체를 떨어뜨렸습니다.")
+                        success_exec += 1
+                
                 elif act['action'] == 'Done':
                     multi_agent_event = c.step(action="Done")
               
@@ -323,32 +332,6 @@ def SwitchOff(robot, sw_obj):
             break # find the first instance
     
     action_queue.append({'action':'ToggleObjectOff', 'objectId':sw_obj_id, 'agent_id':agent_id})        
-
-def DropHandObject(robot):
-    robot_name = robot['name']
-    agent_id = int(robot_name[-1]) - 1
-    
-    # 손에 든 객체가 있는지 확인
-    metadata = c.last_event.events[agent_id].metadata
-    if metadata["inventoryObjects"]:
-        print(f"🤖 {robot_name}이 손에 든 객체를 떨어뜨립니다.")
-        action_queue.append({'action':'DropHandObject', 'agent_id':agent_id})
-    else:
-        print(f"ℹ️ {robot_name}이 손에 든 객체가 없습니다.")
-
-def ToggleObject(robot, obj):
-    robot_name = robot['name']
-    agent_id = int(robot_name[-1]) - 1
-    objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
-    
-    for obj_id in objs:
-        match = re.match(obj, obj_id)
-        if match is not None:
-            target_obj_id = obj_id
-            break # find the first instance
-    
-    print(f"🤖 {robot_name}이 {target_obj_id}를 토글합니다.")
-    action_queue.append({'action':'ToggleObject', 'objectId':target_obj_id, 'agent_id':agent_id})
 
 def OpenObject(robot, sw_obj):
     robot_name = robot['name']
@@ -545,3 +528,31 @@ action_queue.append({'action':'Done'})
 
 task_over = True
 time.sleep(5)
+
+def DropHandObject(robot):
+    """로봇이 손에 들고 있는 객체를 떨어뜨리는 함수"""
+    print("Dropping hand object...")
+    robot_name = robot['name']
+    agent_id = int(robot_name[-1]) - 1
+    
+    # 로봇이 손에 들고 있는 객체가 있는지 확인
+    try:
+        metadata = c.last_event.events[agent_id].metadata
+        inventory_objects = metadata.get('inventoryObjects', [])
+        
+        if not inventory_objects:
+            print(f"❌ 로봇 {agent_id + 1}이 손에 들고 있는 객체가 없습니다.")
+            return False
+        
+        print(f"✅ 로봇 {agent_id + 1}이 손에 들고 있는 객체: {inventory_objects}")
+        
+        # DropHandObject 액션 실행
+        action_queue.append({'action':'DropHandObject', 'agent_id':agent_id})
+        time.sleep(1)
+        
+        print(f"✅ 로봇 {agent_id + 1}이 손에 들고 있던 객체를 떨어뜨렸습니다.")
+        return True
+        
+    except Exception as e:
+        print(f"❌ DropHandObject 실행 중 오류 발생: {e}")
+        return False

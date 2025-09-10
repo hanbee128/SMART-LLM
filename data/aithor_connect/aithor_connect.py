@@ -286,7 +286,7 @@ def exec_actions():
  
                 elif act['action'] == 'PutObject':
                     total_exec += 1
-                    multi_agent_event = c.step(action="PutObject", agentId=act['agent_id'], forceAction=True)
+                    multi_agent_event = c.step(action="PutObject", objectId=act['objectId'], agentId=act['agent_id'], forceAction=True)
                     if multi_agent_event.metadata['errorMessage'] != "":
                         print (multi_agent_event.metadata['errorMessage'])
                     else:
@@ -367,6 +367,15 @@ def exec_actions():
                         print(f"✅ Teleport 성공: 로봇 {act['agent_id']}이 ({act['x']:.1f}, {act['y']:.1f}, {act['z']:.1f})로 이동했습니다.")
                         success_exec += 1
  
+                
+                elif act['action'] == 'DropHandObject':
+                    total_exec += 1
+                    multi_agent_event = c.step(action="DropHandObject", agentId=act['agent_id'], forceAction=True)
+                    if multi_agent_event.metadata['errorMessage'] != "":
+                        print(f"❌ DropHandObject 실패: {multi_agent_event.metadata['errorMessage']}")
+                    else:
+                        print(f"✅ DropHandObject 성공: 로봇 {act['agent_id']}이 손에 들고 있던 객체를 떨어뜨렸습니다.")
+                        success_exec += 1
                 
                 elif act['action'] == 'Done':
                     multi_agent_event = c.step(action="Done")
@@ -613,8 +622,8 @@ def PickupObject(robots, pick_obj):
         pick_obj_metadata = None
         
         for idx, obj in enumerate(objs):
-            # 정확한 매치 또는 패턴 매치 (문자열 어느 부분에서든)
-            if obj == pick_obj or re.search(pick_obj, obj):
+            # 객체 이름 매칭 (문자열 어디에 있든 찾기)
+            if pick_obj in obj:
                 pick_obj_id = obj
                 dest_obj_center = objs_center[idx]
                 pick_obj_metadata = objs_metadata[idx]
@@ -683,8 +692,7 @@ def PutObject(robot, recp):
     is_toggleable = recp_obj_metadata.get('toggleable', False)
     
     # 항상 열려있는 객체들 (일반적으로 컨테이너가 아닌 표면)
-    always_open_containers = ["CounterTop", "Table", "Shelf", "Floor", "Wall", "Bowl", "Plate", "Cup", "Mug","Toaster","TrashCan", "Box", "Bookcase"
-    ,"TrashCan", "Desk"]
+    always_open_containers = ["CounterTop", "Table", "Shelf", "Floor", "Wall", "Bowl", "Plate", "Cup", "Mug", "Box", "GarbageCan", "Toaster"]
     is_always_open = any(container in recp for container in always_open_containers)
     
     if is_always_open:
@@ -712,36 +720,35 @@ def PutObject(robot, recp):
     
     # PutObject 액션 실행
     print(f"PutObject 시도: 손에 든 객체 -> {recp}")
-    print(f"🔍 대상 객체 ID: {recp_obj_id}")
+    action_queue.append({'action':'PutObject', 'objectId':recp_obj_id, 'agent_id':agent_id})
+    time.sleep(1)
     
-    # AI2THOR의 PutObject는 손에 든 객체를 지정된 위치에 배치
-    # objectId는 배치할 대상 객체의 ID
-    result = c.step(action="PutObject", objectId=recp_obj_id, agentId=agent_id)
+    # PutObject 실행 후 상태 확인
+    time.sleep(2)  # 액션 완료 대기
     
-    if result.metadata['errorMessage'] != "":
-        print(f"❌ 실패: {recp}에 배치 실패 - {result.metadata['errorMessage']}")
-        return False
-    else:
-        print(f"✅ 성공: 객체가 {recp}에 배치됨")
-        return True
-
-def DropHandObject(robot):
-    robot_name = robot['name']
-    agent_id = int(robot_name[-1]) - 1
-    
-    # 손에 든 객체가 있는지 확인
-    metadata = c.last_event.events[agent_id].metadata
-    if metadata["inventoryObjects"]:
-        # 손에 든 객체를 떨어뜨림
-        result = c.step(action="DropHandObject", agentId=agent_id, forceAction=True)
-        if result.metadata["lastActionSuccess"]:
-            print(f"✅ {robot_name}이 손에 든 객체를 떨어뜨렸습니다.")
+    # 수신기 내부 객체 확인
+    try:
+        # 수신기 객체 찾기
+        recp_objects = []
+        for obj in c.last_event.metadata["objects"]:
+            if re.match(recp, obj["objectId"]):
+                if "receptacleObjectIds" in obj and obj["receptacleObjectIds"]:
+                    recp_objects = obj["receptacleObjectIds"]
+                    break
+        
+        # 배치 결과 확인
+        if recp_objects:
+            print(f"✅ 성공: 객체가 {recp}에 배치됨")
+            print(f"수신기 내부 객체들: {recp_objects}")
+            return True
         else:
-            print(f"❌ {robot_name}이 객체를 떨어뜨리는데 실패했습니다.")
-    else:
-        print(f"ℹ️ {robot_name}이 손에 든 객체가 없습니다.")
-
-
+            print(f"❌ 실패: 객체가 {recp}에 배치되지 않음")
+            return False
+            
+    except Exception as e:
+        print(f"상태 확인 중 오류: {e}")
+        return False
+         
 def SwitchOn(robot, sw_obj):
     print ("Switching On: ", sw_obj)
     robot_name = robot['name']
@@ -899,8 +906,11 @@ def ToggleObjectOn(robot, toggle_obj):
         print(f"❌ 객체를 찾을 수 없습니다: {toggle_obj}")
         return
     
-    # 객체가 토글 가능한지 확인
-    if toggle_obj_metadata and not toggle_obj_metadata.get('toggleable', False):
+    # 객체가 토글 가능한지 확인 (Toaster는 특별 처리)
+    toggleable_objects = ["Toaster", "StoveBurner", "Lamp", "Television", "Computer", "Laptop", "Microwave"]
+    is_known_toggleable = any(obj in toggle_obj for obj in toggleable_objects)
+    
+    if toggle_obj_metadata and not toggle_obj_metadata.get('toggleable', False) and not is_known_toggleable:
         print(f"❌ {toggle_obj}는 토글할 수 없는 객체입니다.")
         return
     
@@ -922,8 +932,8 @@ def ToggleObjectOn(robot, toggle_obj):
     else:
         print(f"✅ 성공: {toggle_obj}가 켜졌습니다.")
 
-def ToggleObject(robot, toggle_obj):
-    """객체를 토글하는 함수 (켜기/끄기)"""
+def ToggleObjectOff(robot, toggle_obj):
+    """객체를 끄는 함수"""
     robot_name = robot['name']
     agent_id = int(robot_name[-1]) - 1
     objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
@@ -941,30 +951,33 @@ def ToggleObject(robot, toggle_obj):
     
     if toggle_obj_id is None:
         print(f"❌ 객체를 찾을 수 없습니다: {toggle_obj}")
-        return False
+        return
     
-    # 객체가 토글 가능한지 확인
-    if toggle_obj_metadata and not toggle_obj_metadata.get('toggleable', False):
+    # 객체가 토글 가능한지 확인 (Toaster는 특별 처리)
+    toggleable_objects = ["Toaster", "StoveBurner", "Lamp", "Television", "Computer", "Laptop", "Microwave"]
+    is_known_toggleable = any(obj in toggle_obj for obj in toggleable_objects)
+    
+    if toggle_obj_metadata and not toggle_obj_metadata.get('toggleable', False) and not is_known_toggleable:
         print(f"❌ {toggle_obj}는 토글할 수 없는 객체입니다.")
-        return False
+        return
+    
+    # 이미 꺼져있는지 확인
+    if toggle_obj_metadata and not toggle_obj_metadata.get('isToggled', True):
+        print(f"ℹ️ {toggle_obj}는 이미 꺼져있습니다.")
+        return
     
     GoToObject(robot, toggle_obj_id)
     time.sleep(1)
+    print(f"Toggle Off: {toggle_obj}")
+    action_queue.append({'action':'ToggleObjectOff', 'objectId':toggle_obj_id, 'agent_id':agent_id})
+    time.sleep(1)
     
-    # 현재 상태 확인
-    is_toggled = toggle_obj_metadata.get('isToggled', False)
-    action_name = "ToggleObjectOff" if is_toggled else "ToggleObjectOn"
-    status_text = "끄기" if is_toggled else "켜기"
-    
-    print(f"Toggle {status_text}: {toggle_obj}")
-    result = c.step(action=action_name, objectId=toggle_obj_id, agentId=agent_id)
-    
-    if result.metadata['errorMessage'] != "":
-        print(f"❌ 실패: {toggle_obj} {status_text} 실패 - {result.metadata['errorMessage']}")
-        return False
+    # ToggleObjectOff 액션 실행
+    multi_agent_event = c.step(action="ToggleObjectOff", objectId=toggle_obj_id, agentId=agent_id)
+    if multi_agent_event.metadata['errorMessage'] != "":
+        print(f"❌ 실패: {toggle_obj} 끄기 실패 - {multi_agent_event.metadata['errorMessage']}")
     else:
-        print(f"✅ 성공: {toggle_obj}가 {status_text}되었습니다.")
-        return True
+        print(f"✅ 성공: {toggle_obj}가 꺼졌습니다.")
     
 def SliceObject(robot, sw_obj):
     print ("Slicing: ", sw_obj)
@@ -990,40 +1003,6 @@ def SliceObject(robot, sw_obj):
     time.sleep(1)
     action_queue.append({'action':'SliceObject', 'objectId':sw_obj_id, 'agent_id':agent_id})      
     time.sleep(1)
-
-def CookObject(robot, cook_obj):
-    """객체를 요리하는 함수 (전자레인지나 스토브 버너에서)"""
-    robot_name = robot['name']
-    agent_id = int(robot_name[-1]) - 1
-    objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
-    
-    cook_obj_id = None
-    for obj in objs:
-        match = re.match(cook_obj, obj)
-        if match is not None:
-            cook_obj_id = obj
-            break # find the first instance
-    
-    if cook_obj_id is None:
-        print(f"❌ 객체를 찾을 수 없습니다: {cook_obj}")
-        print("🔍 사용 가능한 객체들:")
-        for obj in objs:
-            print(f"  - {obj}")
-        return False
-    
-    GoToObject(robot, cook_obj_id)
-    time.sleep(1)
-    
-    # CookObject 액션 실행
-    print(f"Cooking: {cook_obj}")
-    result = c.step(action="CookObject", objectId=cook_obj_id, agentId=agent_id)
-    
-    if result.metadata['errorMessage'] != "":
-        print(f"❌ {cook_obj} 요리 실패: {result.metadata['errorMessage']}")
-        return False
-    else:
-        print(f"✅ {cook_obj}를 성공적으로 요리했습니다.")
-        return True
     
 
 def CleanObject(robot, sw_obj):
@@ -1070,3 +1049,77 @@ def FillObjectWithLiquid(robot, obj):
     time.sleep(1)
     action_queue.append({'action':'FillObjectWithLiquid', 'objectId':obj_id_found, 'agent_id':agent_id})
     time.sleep(1)
+
+def DropHandObject(robot):
+    """로봇이 손에 들고 있는 객체를 떨어뜨리는 함수"""
+    print("Dropping hand object...")
+    robot_name = robot['name']
+    agent_id = int(robot_name[-1]) - 1
+    
+    # 로봇이 손에 들고 있는 객체가 있는지 확인
+    try:
+        metadata = c.last_event.events[agent_id].metadata
+        inventory_objects = metadata.get('inventoryObjects', [])
+        
+        if not inventory_objects:
+            print(f"❌ 로봇 {agent_id + 1}이 손에 들고 있는 객체가 없습니다.")
+            return False
+        
+        print(f"✅ 로봇 {agent_id + 1}이 손에 들고 있는 객체: {inventory_objects}")
+        
+        # DropHandObject 액션 실행
+        action_queue.append({'action':'DropHandObject', 'agent_id':agent_id})
+        time.sleep(1)
+        
+        print(f"✅ 로봇 {agent_id + 1}이 손에 들고 있던 객체를 떨어뜨렸습니다.")
+        return True
+        
+    except Exception as e:
+        print(f"❌ DropHandObject 실행 중 오류 발생: {e}")
+        return False
+
+def CheckToasterContents():
+    """Toaster 내부 객체들을 확인하는 디버깅 함수"""
+    print("🔍 Toaster 내부 객체 확인 중...")
+    
+    for obj in c.last_event.metadata["objects"]:
+        if "Toaster" in obj["objectId"]:
+            print(f"📦 Toaster 객체: {obj['objectId']}")
+            print(f"🔧 Toaster 속성들:")
+            print(f"  - openable: {obj.get('openable', 'N/A')}")
+            print(f"  - pickupable: {obj.get('pickupable', 'N/A')}")
+            print(f"  - toggleable: {obj.get('toggleable', 'N/A')}")
+            print(f"  - isOpen: {obj.get('isOpen', 'N/A')}")
+            print(f"  - receptacleObjectIds: {obj.get('receptacleObjectIds', 'N/A')}")
+            
+            if "receptacleObjectIds" in obj:
+                receptacle_objects = obj["receptacleObjectIds"]
+                if receptacle_objects:
+                    print(f"✅ Toaster 내부 객체들: {receptacle_objects}")
+                    # BreadSliced_1~6이 포함되어 있는지 확인
+                    bread_sliced_objects = [obj_id for obj_id in receptacle_objects if "BreadSliced_" in obj_id]
+                    if bread_sliced_objects:
+                        print(f"🍞 발견된 빵 조각들: {bread_sliced_objects}")
+                    else:
+                        print("❌ Toaster에 빵 조각이 없습니다.")
+                else:
+                    print("❌ Toaster가 비어있습니다.")
+            else:
+                print("❌ Toaster에 receptacleObjectIds 속성이 없습니다.")
+            break
+    else:
+        print("❌ Toaster 객체를 찾을 수 없습니다.")
+
+def CheckBreadSlicedProperties():
+    """BreadSliced 객체들의 속성을 확인하는 디버깅 함수"""
+    print("🔍 BreadSliced 객체들 속성 확인 중...")
+    
+    for obj in c.last_event.metadata["objects"]:
+        if "BreadSliced_" in obj["objectId"]:
+            print(f"🍞 {obj['objectId']}:")
+            print(f"  - pickupable: {obj.get('pickupable', 'N/A')}")
+            print(f"  - visible: {obj.get('visible', 'N/A')}")
+            print(f"  - position: {obj.get('position', 'N/A')}")
+            print(f"  - parentReceptacles: {obj.get('parentReceptacles', 'N/A')}")
+            print(f"  - receptacleObjectIds: {obj.get('receptacleObjectIds', 'N/A')}")
+            print("---")
