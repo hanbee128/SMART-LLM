@@ -13,6 +13,7 @@ from collections import deque
 import random
 import os
 from glob import glob
+from astar_pathfinding import AStarPathfinding, plan_path_astar, find_optimal_robot_positions_astar
 
 def closest_node(node, nodes, no_robot, clost_node_location):
     crps = []
@@ -155,103 +156,182 @@ actions_thread = threading.Thread(target=exec_actions)
 actions_thread.start()
 
 def GoToObject(robots, dest_obj):
-    print ("Going to ", dest_obj)
-    # check if robots is a list
+    """
+    A* 알고리즘을 사용하여 로봇을 목표 객체로 이동시키는 함수
     
+    Args:
+        robots: 로봇 객체 또는 로봇 객체 리스트
+        dest_obj: 목표 객체 이름
+    """
+    print(f"🎯 A* 경로 계획으로 이동 중: {dest_obj}")
+    
+    # 로봇이 리스트가 아닌 경우 리스트로 변환
     if not isinstance(robots, list):
-        # convert robot to a list
         robots = [robots]
-    no_agents = len (robots)
-    # robots distance to the goal 
-    dist_goals = [10.0] * len(robots)
-    prev_dist_goals = [10.0] * len(robots)
-    count_since_update = [0] * len(robots)
-    clost_node_location = [0] * len(robots)
     
-    # list of objects in the scene and their centers
+    no_agents = len(robots)
+    
+    # 목표 객체의 위치 찾기
     objs = list([obj["objectId"] for obj in c.last_event.metadata["objects"]])
     objs_center = list([obj["axisAlignedBoundingBox"]["center"] for obj in c.last_event.metadata["objects"]])
 
-    # look for the location and id of the destination object
+    dest_obj_id = None
+    dest_obj_center = None
+    
+    # 목표 객체 찾기 (정확한 매칭)
     for idx, obj in enumerate(objs):
-        match = re.match(dest_obj, obj)
-        if match is not None:
+        if dest_obj in obj:  # 부분 매칭 사용
             dest_obj_id = obj
             dest_obj_center = objs_center[idx]
-            break # find the first instance
+            break
+    
+    if dest_obj_id is None:
+        print(f"❌ 목표 객체를 찾을 수 없습니다: {dest_obj}")
+        return
+    
+    dest_obj_pos = (dest_obj_center['x'], dest_obj_center['y'], dest_obj_center['z'])
+    print(f"📍 목표 객체 위치: {dest_obj_pos}")
+    
+    # A* 경로 계획 인스턴스 생성
+    astar = AStarPathfinding(reachable_positions)
+    
+    # 각 로봇의 현재 위치와 목표 위치 수집
+    robot_positions = []
+    robot_goals = []
+    
+    for robot in robots:
+        robot_name = robot['name']
+        agent_id = int(robot_name[-1]) - 1
         
-    dest_obj_pos = [dest_obj_center['x'], dest_obj_center['y'], dest_obj_center['z']] 
+        # 로봇의 현재 위치
+        metadata = c.last_event.events[agent_id].metadata
+        current_pos = (
+            metadata["agent"]["position"]["x"],
+            metadata["agent"]["position"]["y"],
+            metadata["agent"]["position"]["z"]
+        )
+        robot_positions.append(current_pos)
+        robot_goals.append(dest_obj_pos)
     
-    # closest reachable position for each robot
-    # all robots cannot reach the same spot 
-    # differt close points needs to be found for each robot
-    crp = closest_node(dest_obj_pos, reachable_positions, no_agents, clost_node_location)
+    # 각 로봇에 대해 A* 경로 계획 실행
+    robot_paths = []
+    occupied_positions = set()
     
+    for i, robot in enumerate(robots):
+        print(f"🤖 로봇 {i+1} 경로 계획 중...")
+        
+        # 현재 로봇의 경로 계획
+        path = astar.find_path(robot_positions[i], robot_goals[i])
+        
+        if not path:
+            print(f"❌ 로봇 {i+1}의 경로를 찾을 수 없습니다.")
+            continue
+            
+        robot_paths.append(path)
+        
+        # 경로의 중간 지점들을 점유 위치로 등록 (충돌 회피)
+        for pos in path[1:-1]:  # 시작점과 끝점 제외
+            occupied_positions.add(pos)
+    
+    # 경로를 따라 이동 실행
     goal_thresh = 0.3
-    # at least one robot is far away from the goal
+    max_iterations = 100
+    iteration = 0
     
-    while all(d > goal_thresh for d in dist_goals):
-        for ia, robot in enumerate(robots):
+    while iteration < max_iterations:
+        all_reached = True
+        
+        for i, robot in enumerate(robots):
+            if i >= len(robot_paths) or not robot_paths[i]:
+                continue
+                
             robot_name = robot['name']
             agent_id = int(robot_name[-1]) - 1
             
-            # get the pose of robot        
+            # 로봇의 현재 위치
             metadata = c.last_event.events[agent_id].metadata
-            location = {
-                "x": metadata["agent"]["position"]["x"],
-                "y": metadata["agent"]["position"]["y"],
-                "z": metadata["agent"]["position"]["z"],
-                "rotation": metadata["agent"]["rotation"]["y"],
-                "horizon": metadata["agent"]["cameraHorizon"]}
+            current_pos = (
+                metadata["agent"]["position"]["x"],
+                metadata["agent"]["position"]["y"],
+                metadata["agent"]["position"]["z"]
+            )
             
-            prev_dist_goals[ia] = dist_goals[ia] # store the previous distance to goal
-            dist_goals[ia] = distance_pts([location['x'], location['y'], location['z']], crp[ia])
+            # 목표까지의 거리 계산
+            dist_to_goal = distance_pts(current_pos, dest_obj_pos)
             
-            dist_del = abs(dist_goals[ia] - prev_dist_goals[ia])
-            print (ia, "Dist to Goal: ", dist_goals[ia], dist_del, clost_node_location[ia])
-            if dist_del < 0.2:
-                # robot did not move 
-                count_since_update[ia] += 1
-            else:
-                # robot moving 
-                count_since_update[ia] = 0
+            if dist_to_goal > goal_thresh:
+                all_reached = False
                 
-            if count_since_update[ia] < 15:
-                action_queue.append({'action':'ObjectNavExpertAction', 'position':dict(x=crp[ia][0], y=crp[ia][1], z=crp[ia][2]), 'agent_id':agent_id})
-            else:    
-                #updating goal
-                clost_node_location[ia] += 1
-                count_since_update[ia] = 0
-                crp = closest_node(dest_obj_pos, reachable_positions, no_agents, clost_node_location)
-    
-            time.sleep(0.5)
-
-    # align the robot once goal is reached
-    # compute angle between robot heading and object
-    metadata = c.last_event.events[agent_id].metadata
-    robot_location = {
-        "x": metadata["agent"]["position"]["x"],
-        "y": metadata["agent"]["position"]["y"],
-        "z": metadata["agent"]["position"]["z"],
-        "rotation": metadata["agent"]["rotation"]["y"],
-        "horizon": metadata["agent"]["cameraHorizon"]}
-    
-    robot_object_vec = [dest_obj_pos[0] -robot_location['x'], dest_obj_pos[2]-robot_location['z']]
-    y_axis = [0, 1]
-    unit_y = y_axis / np.linalg.norm(y_axis)
-    unit_vector = robot_object_vec / np.linalg.norm(robot_object_vec)
-    
-    angle = math.atan2(np.linalg.det([unit_vector,unit_y]),np.dot(unit_vector,unit_y))
-    angle = 360*angle/(2*np.pi)
-    angle = (angle + 360) % 360
-    rot_angle = angle - robot_location['rotation']
-    
-    if rot_angle > 0:
-        action_queue.append({'action':'RotateRight', 'degrees':abs(rot_angle), 'agent_id':agent_id})
-    else:
-        action_queue.append({'action':'RotateLeft', 'degrees':abs(rot_angle), 'agent_id':agent_id})
+                # 다음 경로 지점으로 이동
+                if robot_paths[i]:
+                    next_waypoint = robot_paths[i][0]
+                    action_queue.append({
+                        'action': 'ObjectNavExpertAction',
+                        'position': dict(x=next_waypoint[0], y=next_waypoint[1], z=next_waypoint[2]),
+                        'agent_id': agent_id
+                    })
+                    
+                    # 도달한 경로 지점 제거
+                    if distance_pts(current_pos, next_waypoint) < 0.5:
+                        robot_paths[i].pop(0)
+            else:
+                print(f"✅ 로봇 {i+1}이 목표에 도달했습니다!")
         
-    print ("Reached: ", dest_obj)
+        if all_reached:
+            break
+            
+        iteration += 1
+        time.sleep(0.5)
+    
+    # 모든 로봇이 목표에 도달했는지 확인
+    for i, robot in enumerate(robots):
+        robot_name = robot['name']
+        agent_id = int(robot_name[-1]) - 1
+        
+        metadata = c.last_event.events[agent_id].metadata
+        current_pos = (
+            metadata["agent"]["position"]["x"],
+            metadata["agent"]["position"]["y"],
+            metadata["agent"]["position"]["z"]
+        )
+        
+        dist_to_goal = distance_pts(current_pos, dest_obj_pos)
+        if dist_to_goal <= goal_thresh:
+            print(f"✅ 로봇 {i+1}이 {dest_obj}에 성공적으로 도달했습니다!")
+        else:
+            print(f"⚠️ 로봇 {i+1}이 목표에 도달하지 못했습니다. 거리: {dist_to_goal:.2f}")
+    
+    # 목표 객체를 향해 회전
+    for robot in robots:
+        robot_name = robot['name']
+        agent_id = int(robot_name[-1]) - 1
+        
+        metadata = c.last_event.events[agent_id].metadata
+        robot_location = {
+            "x": metadata["agent"]["position"]["x"],
+            "y": metadata["agent"]["position"]["y"],
+            "z": metadata["agent"]["position"]["z"],
+            "rotation": metadata["agent"]["rotation"]["y"]
+        }
+        
+        # 목표 객체를 향한 각도 계산
+        robot_object_vec = [dest_obj_pos[0] - robot_location['x'], dest_obj_pos[2] - robot_location['z']]
+        y_axis = [0, 1]
+        unit_y = y_axis / np.linalg.norm(y_axis)
+        unit_vector = robot_object_vec / np.linalg.norm(robot_object_vec)
+        
+        angle = math.atan2(np.linalg.det([unit_vector, unit_y]), np.dot(unit_vector, unit_y))
+        angle = 360 * angle / (2 * np.pi)
+        angle = (angle + 360) % 360
+        rot_angle = angle - robot_location['rotation']
+        
+        if abs(rot_angle) > 5:  # 5도 이상 차이가 날 때만 회전
+            if rot_angle > 0:
+                action_queue.append({'action': 'RotateRight', 'degrees': abs(rot_angle), 'agent_id': agent_id})
+            else:
+                action_queue.append({'action': 'RotateLeft', 'degrees': abs(rot_angle), 'agent_id': agent_id})
+    
+    print(f"🎯 A* 경로 계획 완료: {dest_obj}")
     
 def PickupObject(robot, pick_obj):
     robot_name = robot['name']
