@@ -292,6 +292,181 @@ def assign_robots_by_distance(robots, task_description, floor_plan, busy_robots=
     print(f"✅ 선택된 로봇들: {[robot['name'] for robot in selected_robots]}")
     return selected_robots
 
+def llm_dialogue_improvement(code, task_description, maker_model, critic_model, available_robots_count=1, max_rounds=3):
+    """
+    LLM Maker와 LLM Critic 간의 대화를 통해 코드를 개선합니다.
+    """
+    print("\n🤖 LLM Maker와 LLM Critic 간 대화 시작...")
+    print("=" * 60)
+    
+    current_code = code
+    dialogue_history = []
+    
+    for round_num in range(max_rounds):
+        print(f"\n📝 [라운드 {round_num + 1}] LLM Critic 검토 중...")
+        
+        # Critic이 코드를 검토
+        critic_prompt = f"""
+당신은 AI2Thor 로봇 코드 검증 전문가입니다. 다음 코드를 검토하고 간단한 피드백을 제공해주세요.
+
+TASK: {task_description}
+사용 가능한 로봇 수: {available_robots_count}
+
+현재 코드:
+```python
+{current_code}
+```
+
+검증 기준:
+1. AI2Thor 액션 함수 사용: GoToObject, PickupObject, PutObject, OpenObject, CloseObject, ToggleObjectOn, ToggleObjectOff, SliceObject, CleanObject, ThrowObject, BreakObject, DropHandObject, PushObject, PullObject, FillObjectWithLiquid, EmptyLiquidFromObject, HandoffObject
+2. 객체 이름 정확성: 정확한 대소문자와 이름 사용 (CellPhone, CoffeeTable, GarbageCan, RemoteControl, Television, Refrigerator 등)
+3. 객체 상태 변화: 슬라이스 후 AppleSliced_1, BreadSliced_1 등 사용, 깨진 후 CupBroke, PlateBroke 등 사용
+4. 로봇 할당: robot_list[0], robot_list[1] 등 올바른 인덱스 사용
+5. 컨테이너 처리: 열 수 있는 컨테이너는 OpenObject 먼저 실행
+6. 들여쓰기 및 문법: 올바른 Python 문법과 들여쓰기
+7. 함수 호출: 마지막에 올바른 함수 호출 포함
+8. 태스크에 포함된 액션만 사용해야 함 (예: "Slice the something" 태스크에서는 칼을 먼저 가져와서 자르는 행위만 하면 끝)
+9. TASK에 AI2THOR에서 쓰지 않는 단어를 쓰면 AI2THOR용으로 변경해서 사용
+
+응답 형식:
+- 문제 없음: "VALID"
+- 문제 있음: "ISSUE: [간단한 문제점 설명]"
+"""
+
+        try:
+            if "gpt" in critic_model.lower():
+                messages = [{"role": "user", "content": critic_prompt}]
+                _, critic_response = LM(messages, critic_model, max_tokens=500, frequency_penalty=0.0)
+            else:
+                _, critic_response = LM(critic_prompt, critic_model, max_tokens=500, frequency_penalty=0.0)
+            
+            critic_response = critic_response.strip()
+            print(f"🔍 LLM Critic: {critic_response}")
+            
+            if critic_response.upper() == "VALID":
+                print("✅ LLM Critic: 코드가 완벽합니다!")
+                break
+            
+            # Maker가 Critic의 피드백을 받아 코드 수정
+            print(f"\n🛠️ [라운드 {round_num + 1}] LLM Maker가 코드 수정 중...")
+            
+            maker_prompt = f"""
+당신은 AI2Thor 로봇 코드 생성 전문가입니다. Critic의 피드백을 받아 코드를 수정해주세요.
+
+TASK: {task_description}
+사용 가능한 로봇 수: {available_robots_count}
+
+현재 코드:
+```python
+{current_code}
+```
+
+Critic 피드백: {critic_response}
+
+수정된 Python 코드만 제공해주세요 (마크다운 없이):
+"""
+
+            try:
+                if "gpt" in maker_model.lower():
+                    messages = [{"role": "user", "content": maker_prompt}]
+                    _, maker_response = LM(messages, maker_model, max_tokens=2000, frequency_penalty=0.0)
+                else:
+                    _, maker_response = LM(maker_prompt, maker_model, max_tokens=2000, frequency_penalty=0.0)
+                
+                # 수정된 코드 추출
+                corrected_code = extract_code_from_response(maker_response)
+                if corrected_code:
+                    old_length = len(current_code)
+                    current_code = clean_generated_code(corrected_code)
+                    new_length = len(current_code)
+                    print(f"🛠️ LLM Maker: 코드 수정 완료 ({old_length} → {new_length} 문자)")
+                    dialogue_history.append(f"Round {round_num + 1}: Critic → {critic_response} | Maker → 코드 수정 완료")
+                else:
+                    print("❌ LLM Maker: 수정된 코드 추출 실패")
+                    break
+                    
+            except Exception as e:
+                print(f"❌ LLM Maker 오류: {e}")
+                break
+                
+        except Exception as e:
+            print(f"❌ LLM Critic 오류: {e}")
+            break
+    
+    print("\n" + "=" * 60)
+    print("🤖 LLM 대화 완료!")
+    
+    return current_code
+
+'''
+def llm_critic_validation(code, task_description, model_name="ollama:llama3", available_robots_count=1):
+    """
+    LLM을 사용하여 생성된 코드를 검증하고 개선합니다.
+    """
+    print("🔍 LLM Critic으로 코드 검증 중...")
+    
+    # 검증 프롬프트
+    critic_prompt = f"""
+당신은 AI2Thor 로봇 코드 검증 전문가입니다. 다음 생성된 코드를 검토하고 문제점을 찾아 수정해주세요.
+최대한 원본 코드를 유지하면서 최소한으로만 수정해주세요.
+
+TASK: {task_description}
+
+생성된 코드:
+```python
+{code}
+```
+
+검증 기준:
+1. AI2Thor 액션 함수 사용: GoToObject, PickupObject, PutObject, OpenObject, CloseObject, ToggleObjectOn, ToggleObjectOff, SliceObject, CleanObject, ThrowObject, BreakObject, DropHandObject, PushObject, PullObject, FillObjectWithLiquid, EmptyLiquidFromObject, HandoffObject
+2. 객체 이름 정확성: 정확한 대소문자와 이름 사용 (CellPhone, CoffeeTable, GarbageCan, RemoteControl, Television, Refrigerator 등)
+3. 객체 상태 변화: 슬라이스 후 AppleSliced_1, BreadSliced_1 등 사용, 깨진 후 CupBroke, PlateBroke 등 사용
+4. 로봇 할당: robot_list[0], robot_list[1] 등 올바른 인덱스 사용
+6. 컨테이너 처리: 열 수 있는 컨테이너는 OpenObject 먼저 실행
+7. 들여쓰기 및 문법: 올바른 Python 문법과 들여쓰기
+8. 함수 호출: 마지막에 올바른 함수 호출 포함
+9. TASK에 AI2THOR에서 쓰지 않는 단어를 쓰면 AI2THOR용으로 변경해서 사용
+
+
+문제점을 찾아 수정된 코드를 제공해주세요. 문제가 없다면 "VALID"라고 응답하고, 문제가 있다면 수정된 코드를 제공해주세요.
+
+응답 형식:
+- 문제 없음: "VALID"
+- 문제 있음: 수정된 Python 코드 (마크다운 없이)
+"""
+
+    try:
+        if "gpt" in model_name.lower():
+            messages = [{"role": "user", "content": critic_prompt}]
+            _, response = LM(messages, model_name, max_tokens=2000, frequency_penalty=0.0)
+        else:
+            _, response = LM(critic_prompt, model_name, max_tokens=2000, frequency_penalty=0.0)
+        
+        response = response.strip()
+        
+        if response.upper() == "VALID":
+            print("✅ LLM Critic 검증 통과: 코드가 올바르게 생성되었습니다.")
+            return code
+        else:
+            print("⚠️ LLM Critic이 문제를 발견했습니다. 코드를 수정합니다...")
+            # 마크다운 코드 블록 제거
+            import re
+            cleaned_response = re.sub(r'```python\s*', '', response)
+            cleaned_response = re.sub(r'```\s*$', '', cleaned_response)
+            cleaned_response = re.sub(r'```.*?\n', '', cleaned_response, flags=re.DOTALL)
+            
+            # LLM Critic이 수정한 코드도 clean_generated_code를 거쳐야 함
+            print("🔧 수정된 코드에 추가 정리 적용 중...")
+            final_cleaned_response = clean_generated_code(cleaned_response, available_robots_count)
+            
+            print("✅ LLM Critic에 의해 코드가 수정되고 정리되었습니다.")
+            return final_cleaned_response
+            
+    except Exception as e:
+        print(f"⚠️ LLM Critic 검증 중 오류 발생: {e}")
+        print("원본 코드를 그대로 사용합니다.")
+        return code
+'''
 def clean_generated_code(code, available_robots_count=1):
     """생성된 코드에서 마크다운 블록과 불필요한 텍스트를 제거합니다."""
     import re
@@ -329,6 +504,26 @@ def clean_generated_code(code, available_robots_count=1):
     code = re.sub(r'^.*and the function call at the end.*$', '', code, flags=re.MULTILINE)
     code = re.sub(r'^.*is `.*`.*$', '', code, flags=re.MULTILINE)
     
+    # 특수 문자와 화살표 제거 (Python 문법 오류 방지)
+    code = re.sub(r'→', '->', code)  # 화살표를 화살표로 변환
+    code = re.sub(r'[^\x00-\x7F]+', '', code)  # ASCII가 아닌 문자 제거
+    
+    # LLM이 생성한 설명 텍스트 제거 (더 강화)
+    code = re.sub(r'^.*The code was not following.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*correct action sequence.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*GoToObject.*PickupObject.*GoToObject.*PutObject.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*action sequence.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*following.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*correct.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*sequence.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*The robot will.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*First.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Then.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Finally.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Note.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*This.*$', '', code, flags=re.MULTILINE)
+    code = re.sub(r'^.*Here.*$', '', code, flags=re.MULTILINE)
+    
     # AI2Thor 액션 함수들
     ai2thor_functions = ['GoToObject', 'PickupObject', 'PutObject', 'OpenObject', 'CloseObject', 
                         'SwitchOn', 'SwitchOff', 'SliceObject', 'CleanObject', 'ThrowObject', 
@@ -339,7 +534,10 @@ def clean_generated_code(code, available_robots_count=1):
     cleaned_lines = []
     for line in lines:
         line_stripped = line.strip()
-        if (not line_stripped or  # 빈 줄
+        
+        # 유효한 코드 라인인지 확인
+        is_valid_code = (
+            not line_stripped or  # 빈 줄
             line_stripped.startswith(('def ', 'import ', 'from ', 'class ', '#', '    ', '\t')) or  # 함수 정의, import, 주석, 들여쓰기
             any(line_stripped.startswith(func) for func in ai2thor_functions) or  # AI2Thor 함수 호출
             line_stripped.startswith(('robots', 'objects', 'if ', 'for ', 'while ', 'try:', 'except', 'finally:', 'with ', 'return ', 'yield ', 'global ', 'nonlocal ')) or  # 변수, 제어문
@@ -349,9 +547,23 @@ def clean_generated_code(code, available_robots_count=1):
              any(func in line_stripped for func in ai2thor_functions)) or
             # 함수 실행 호출 패턴
             (line_stripped and '(' in line_stripped and ')' in line_stripped and 
-             not line_stripped.startswith('#') and 'robot' in line_stripped.lower())):
+             not line_stripped.startswith('#') and 'robot' in line_stripped.lower()) or
+            # 숫자로 시작하는 주석 (0:, 1:, 2: 등)
+            (line_stripped and line_stripped[0].isdigit() and ':' in line_stripped) or
+            # time.sleep() 같은 함수 호출
+            (line_stripped and 'time.sleep' in line_stripped) or
+            # 변수 할당
+            (line_stripped and '=' in line_stripped and not line_stripped.startswith('#'))
+        )
+        
+        if is_valid_code:
             cleaned_lines.append(line)
-        # 설명 텍스트는 제거 (위 조건에 맞지 않는 모든 줄)
+        else:
+            # 설명 텍스트는 주석으로 변환
+            if line_stripped and not line_stripped.startswith('#'):
+                cleaned_lines.append(f"# {line_stripped}")
+            else:
+                cleaned_lines.append(line)
     
     result = '\n'.join(cleaned_lines)
     
@@ -384,7 +596,9 @@ def clean_generated_code(code, available_robots_count=1):
     result = result.replace("'coffeeTable'", "'CoffeeTable'")
     
     # 쓰레기통 관련
-    result = result.replace("'TrashCan'", "'GarbageCan'")
+    result = result.replace("'Trash'", "'GarbageCan'")
+    result = result.replace("'trash'", "'GarbageCan'")
+    result = result.replace("'TrashCan'", "'GarbageCan'")    
     result = result.replace("'trashcan'", "'GarbageCan'")
     result = result.replace("'garbagecan'", "'GarbageCan'")
     
@@ -527,10 +741,18 @@ if __name__ == "__main__":
     
     parser.add_argument("--log-results", type=bool, default=True)
     
+    # LLM Critic 설정
+    parser.add_argument("--critic-model", type=str, default="ollama:llama3", 
+                        help="LLM Critic에 사용할 모델 (기본값: ollama:llama3)")
+    parser.add_argument("--disable-critic", action="store_true", 
+                        help="LLM Critic 검증 비활성화")
+    
     args = parser.parse_args()
 
     # 사용자로부터 API 키 입력받기
     print(f"선택된 모델: {args.model}")
+    if not args.disable_critic:
+        print(f"LLM Critic 모델: {args.critic_model}")
     api_key = get_api_key_interactive(args.model)
     set_api_key_for_model(args.model, api_key)
     
@@ -712,7 +934,7 @@ IMPORTANT: Generate Python code using ONLY these AI2Thor action functions:
 - SliceObject(robot, object_name)
 - CleanObject(robot, object_name)
 - DirtyObject(robot, object_name)
-- ThrowObject(robot, object_name, target_object)
+- ThrowObject(robot, target_object)
 - BreakObject(robot, object_name)
 - DropHandObject(robot)
 - PushObject(robot, object_name)
@@ -727,6 +949,32 @@ Kitchenware: Bowl, Bottle, Cup, Fork, GarbageCan, Kettle, Knife, Microwave, Mug,
 Food: Apple, Bread, ButterKnife, Egg, Lettuce, Potato, Tomato
 Electronics: AlarmClock, Blinds, CellPhone, Computer, HousePlant, Lamp, Laptop, LightSwitch, Pen, Pencil, RemoteControl, Statue, Television, Vase
 Miscellaneous: Basket, Book, Box, Candle, CD, Cloth, CreditCard, Newspaper, Pillow, SaltShaker, SoapBar, SprayBottle, Toilet, ToiletPaper, Towel, Window
+
+IMPORTANT: OBJECT STATE CHANGES - When objects are modified, their names change:
+SLICED OBJECTS (after SliceObject action):
+- Apple → AppleSliced
+- Bread → BreadSliced  
+- Eggplant → EggplantSliced
+- Lettuce → LettuceSliced
+- Potato → PotatoSliced
+- Tomato → TomatoSliced
+
+BROKEN OBJECTS (after BreakObject action):
+- Cup → CupBroke
+- Egg → EggCracked
+- Glass → GlassBroke
+- Jar → JarBroke
+- Mug → MugBroke
+- Plate → PlateBroke
+- Pot → PotBroke
+- Statue → StatueBroke
+- Vase → VaseBroke
+- Window → WindowBroke
+
+CRITICAL: Always use the CORRECT object name after state changes!
+- If you slice an Apple, use 'AppleSliced' not 'Apple'
+- If you break a Cup, use 'CupBroke' not 'Cup'
+- Check object state before referencing it
 
 IMPORTANT: Use exact capitalization as shown above. Common corrections:
 - CellPhone (not Cellphone or cellphone)
@@ -747,7 +995,7 @@ RULES:
    - GoToObject(robot, 'Object') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Destination')
 
 8. CRITICAL: When slicing an object, follow this sequence:
-   - GoToObject(robot, 'Knife') → PickupObject(robot, 'Knife') → GoToObject(robot, 'Object') → SliceObject(robot, 'Object') → PutObject(robot, 'CounterTop') → PickupObject(robot, 'Object') → GoToObject(robot, 'Destination') → PutObject(robot, 'Destination')
+   - GoToObject(robot, 'Knife') → PickupObject(robot, 'Knife') → GoToObject(robot, 'Object') → SliceObject(robot, 'Object') → DropHandObject(robot) → PickupObject(robot, 'Object') 
 
 9. CRITICAL: When putting objects in openable containers (Drawer, Cabinet, Refrigerator, etc.):
    - If multiple robots are available, coordinate the work:
@@ -763,18 +1011,6 @@ RULES:
    - Then: All robots place their objects in the opened container
    - SEQUENCE: Open → Pick up objects → Place objects (coordinate timing)
 
-
-
-WORKING EXAMPLE (Turn on the laptop):
-def turn_on_laptop(robot_list):
-    # robot_list = [robot1]
-    # 0: Go to the Laptop using robot1.
-    GoToObject(robot_list[0], 'Laptop')
-    # 1: Turn on the Laptop using robot1.
-    ToggleObjectOn(robot_list[0], 'Laptop')
-
-# Execute SubTask
-turn_on_laptop([robots[0]])
 
 WORKING EXAMPLE (Slice the bread and toast it):
 def slice_bread_and_toast(robot_list):
@@ -846,37 +1082,13 @@ def wash_fork_and_put_in_bowl(robot_list):
 # Execute SubTask
 wash_fork_and_put_in_bowl(robots[0])
 
-WORKING EXAMPLE (Slice apple and throw it in the trash):
-def slice_apple_and_throw_in_trash(robot_list):
-    # robot_list = [robot1]
-    # 0: Go to the Knife using robot1.
-    GoToObject(robot_list[0], 'Knife')
-    # 1: Pick up the Knife using robot1.
-    PickupObject(robot_list[0], 'Knife')
-    # 2: Go to the Apple using robot1.
-    GoToObject(robot_list[0], 'Apple')
-    # 3: Slice the Apple using robot1.
-    SliceObject(robot_list[0], 'Apple')
-     # 4: Put the Knife using robot1.
-     PutObject(robot_list[0], 'CounterTop')
-     # 5: Pick up the sliced Apple using robot1.
-    PickupObject(robot_list[0], 'Apple')
-    # 7: Go to the GarbageCan using robot1.
-    GoToObject(robot_list[0], 'GarbageCan')
-    # 8: Put the Apple in the GarbageCan using robot1.
-    PutObject(robot_list[0], 'GarbageCan')
-
-# Execute SubTask
-slice_apple_and_throw_in_trash(robots[0])
-
-
 KEY RULES:
 - If task mentions "slice of bread" or "slice of breadloaf": FIRST use GoToObject(robot_list[0], 'Knife') to slice the bread, THEN use knife to slice the bread
 - IMPORTANT: Use 'Bread' not 'Breadloaf' - AI2THOR uses 'Bread' as the object name'
 - IMPORTANT: if bread is sliced, use 'BreadSliced_1', 'BreadSliced_2'... not 'Bread'
 - if task mentions "breadloaf", use "Bread" 
 - If task mentions "toast": Use ToggleObjectOn to turn on the toaster
-- If task mentions "put in drawer": Use OpenObject first if the drawer is closed, then PutObject
+- If task mentions "put in "openable object": Use OpenObject first if the openable object is closed, then PutObject
 - If task mentions "pick up": Use GoToObject first to navigate to the object, then PickupObject
 Now generate the code for this task following the same pattern:
 
@@ -902,7 +1114,41 @@ Generate the code now:"""
 
         # 코드 후처리 적용
         cleaned_text = clean_generated_code(text, len(assigned_robots_code))
-        code_plan.append(cleaned_text)
+        
+        # LLM Critic 검증 (비활성화되지 않은 경우에만)
+        if not args.disable_critic:
+            print(f"\n🔍 Task {i+1}/{len(test_tasks)} LLM Critic 검증 중...")
+            print(f"🤖 Critic 모델: {args.critic_model}")
+            
+            # Critic 모델용 API 키 설정
+            try:
+                critic_api_key = get_api_key_interactive(args.critic_model)
+                set_api_key_for_model(args.critic_model, critic_api_key)
+            except:
+                print("⚠️ Critic 모델 API 키 설정 실패. 원본 코드를 사용합니다.")
+                validated_code = cleaned_text
+            else:
+                # LLM Maker와 LLM Critic 간 대화를 통한 코드 개선
+                validated_code = llm_dialogue_improvement(
+                    cleaned_text, 
+                    test_tasks[i], 
+                    args.model,  # Maker 모델
+                    args.critic_model,  # Critic 모델
+                    len(assigned_robots_code)
+                )
+            
+            # 검증 결과 출력
+            if validated_code != cleaned_text:
+                print(f"📝 Task {i+1} 코드가 LLM 대화를 통해 개선되었습니다.")
+                print(f"   - 원본 코드 길이: {len(cleaned_text)} 문자")
+                print(f"   - 수정된 코드 길이: {len(validated_code)} 문자")
+            else:
+                print(f"✅ Task {i+1} 코드가 LLM 대화를 통해 검증되었습니다.")
+        else:
+            print(f"⏭️ Task {i+1} LLM Critic 검증 건너뛰기 (비활성화됨)")
+            validated_code = cleaned_text
+        
+        code_plan.append(validated_code)
     
     # save generated plan
     exec_folders = []
