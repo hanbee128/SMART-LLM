@@ -3,6 +3,7 @@ import subprocess
 import time
 import argparse
 import json
+import shlex
 from pathlib import Path
 
 BASELINE_ROOT = "/home/junghanbee/다운로드/SMART-LLM-master"
@@ -85,18 +86,34 @@ def parse_metrics(executable_stdout: str):
     return dict(sr=sr, tc=tc, gcr=gcr, exec=exec_ratio, ru=ru)
 
 def run_pipeline(root: str, floor_plan: int, model: str, disable_critic: bool, hb_interval: int, status_dir: str, prefix: str):
-    env_cmd = ["bash", "-lc", f"source {IMPROVED_ROOT}/unified/bin/activate && echo ok"]
-    subprocess.run(env_cmd, cwd=root)
+    # Use improved venv to satisfy dependencies for both roots
+    venv_activate = f"source {IMPROVED_ROOT}/unified/bin/activate"
 
-    args = ["python3", "scripts/run_llm.py", "--floor-plan", str(floor_plan), "--model", model]
+    # Snapshot logs before generation
+    logs_dir = Path(root) / "logs"
+    before = set([p.name for p in logs_dir.iterdir()]) if logs_dir.exists() else set()
+
+    base_cmd = ["python3", "scripts/run_llm.py", "--floor-plan", str(floor_plan), "--model", model]
     if disable_critic:
-        args.append("--disable-critic")
-    rc, out, err, gen_sec = run_cmd_heartbeat(args, cwd=root, tag=f"{prefix}:gen", interval_sec=hb_interval, status_dir=status_dir)
-    latest = discover_latest_log(root)
+        base_cmd.append("--disable-critic")
+    shell_cmd = ["bash", "-lc", f"{venv_activate} && {shlex.join(base_cmd)}"]
+    rc, out, err, gen_sec = run_cmd_heartbeat(shell_cmd, cwd=root, tag=f"{prefix}:gen", interval_sec=hb_interval, status_dir=status_dir)
+
+    # Fallback: remove --disable-critic if baseline doesn't support it
+    if rc != 0 and disable_critic and ("unrecognized arguments" in err or "unrecognized" in out.lower() or "usage:" in out.lower()):
+        fallback_cmd = ["python3", "scripts/run_llm.py", "--floor-plan", str(floor_plan), "--model", model]
+        shell_cmd_fb = ["bash", "-lc", f"{venv_activate} && {shlex.join(fallback_cmd)}"]
+        rc, out, err, gen_sec = run_cmd_heartbeat(shell_cmd_fb, cwd=root, tag=f"{prefix}:gen", interval_sec=hb_interval, status_dir=status_dir)
+
+    # Determine newly created log folder
+    after = set([p.name for p in logs_dir.iterdir()]) if logs_dir.exists() else set()
+    new_logs = sorted(list(after - before))
+    latest = new_logs[-1] if new_logs else discover_latest_log(root)
     exe_out = ""
     exe_sec = None
     if latest:
-        rc2, out2, err2, exe_sec = run_cmd_heartbeat(["python3", "scripts/execute_plan.py", "--command", latest], cwd=root, tag=f"{prefix}:exec", interval_sec=hb_interval, status_dir=status_dir)
+        exec_cmd = ["bash", "-lc", f"{venv_activate} && python3 scripts/execute_plan.py --command {shlex.quote(latest)}"]
+        rc2, out2, err2, exe_sec = run_cmd_heartbeat(exec_cmd, cwd=root, tag=f"{prefix}:exec", interval_sec=hb_interval, status_dir=status_dir)
         exe_out = out2 + "\n" + err2
     return {
         "log_folder": latest,
