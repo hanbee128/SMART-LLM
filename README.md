@@ -38,8 +38,8 @@ AI2THOR 환경에서 다중 로봇 작업 계획을 위한 고급 프레임워�
 ### 1. 환경 설정
 ```bash
 # Python 3.9 환경 생성
-conda create -n robot_planning python==3.9
-conda activate robot_planning
+conda create -n unified python==3.9
+conda activate unified
 
 # 의존성 설치
 pip install -r requirments.txt
@@ -142,7 +142,7 @@ CheckBreadSlicedProperties()
 ### 실시간 시각화
 - **분할 화면**: 모든 에이전트와 탑뷰를 3x2 그리드로 표시
 - **실시간 업데이트**: 로봇 동작을 실시간으로 관찰
-- **이미지 저장 없음**: 디스크 공간 절약
+- **통합 비디오 저장**: 실행 로그 폴더에 `combined_visualization.mp4` 자동 생성
 
 ## 🐛 문제 해결
 
@@ -217,11 +217,64 @@ DropHandObject(robot)  # 손에 든 객체 확인
 - 실시간 상태 모니터링
 
 ## 📈 성능 개선
+## 🧪 베이스라인 비교 방법
+
+### 폴더 구조
+- 베이스라인(기존 SMART-LLM): `/home/junghanbee/다운로드/SMART-LLM-master`
+- 개선본(현재): `/home/junghanbee/바탕화면/hanbee/SMART-LLM-master/SMART-LLM`
+
+### 비교 러너
+다음 스크립트로 동일 파라미터로 두 파이프라인을 연속 실행하고 지표/시간을 비교합니다.
+
+```bash
+source unified/bin/activate  # 개선본 venv 사용 (필요시)
+python3 scripts/benchmark/run_comparison.py --floor-plan 21 --model ollama:llama3 --disable-critic
+```
+
+출력: 각 측의 최신 로그 폴더, 생성/실행 시간, 실행 지표(SR/TC/GCR/Exec/RU)를 요약해 표시합니다.
+
+권장: 공정 비교를 위해 시각화/비디오를 끄거나 동일 설정 유지, 동일 모델/하드웨어/시드 사용.
+
 
 - **메모리 사용량**: 40% 감소 (이미지 저장 제거)
 - **실행 속도**: 25% 향상 (파일 I/O 제거)
 - **디스크 사용량**: 90% 감소 (이미지 저장 없음)
 - **안정성**: 95% 향상 (객체 매칭 개선)
+
+### v2.1 생성 코드 자동 정규화/휴리스틱 강화
+- 생성 파이프라인 후처리(clean_generated_code) 강화로 LLM 생성 코드의 실행 신뢰도를 높였습니다.
+  - 객체명 표준화: 'bread'/'Bread' → 'Bread', 'toaster' → 'Toaster', 'countertop' → 'CounterTop', 'knife' → 'Knife'
+  - PutObject 시그니처 정규화: `PutObject(robot, obj, recp)` 형태를 실행 엔진 규격인 `PutObject(robot, recp)`로 자동 교정
+  - 비표준/미정의 함수 제거: `WaitUntilObjectIsReady(...)` 등 실행 불가 호출 자동 제거
+  - 항상 열려있는 수신기 처리: `OpenObject(..., 'CounterTop')` 호출 자동 제거
+  - LLM 프롬프트에 물리 규칙 강화: 슬라이스/수신기 처리 시퀀스(칼 사용, 작업면 확보, 컨테이너 열기 선행) 가이드 명시
+
+- 적용 범위: 분해/할당/코드생성 3단계 모두에 후처리를 적용하여, 로그에 저장되는 `code_plan.py`가 실행 규격을 자동 준수하도록 보장합니다.
+
+### v2.2 Dual-Guard CoT 및 대화형 코얼리션(간략) 추가
+- 통합 비디오 저장 기능:
+  - 실행 종료 시 로그 폴더(`logs/<실행폴더>/`) 내 `combined_visualization.mp4` 저장
+  - OpenCV `mp4v`, 10 FPS, 분할 시각화 화면을 그대로 기록
+- Dual-Guard CoT 중 Physical CoT(사전 검증) 경량 버전 추가:
+  - `physical_cot_validate_code(...)`: 실행 전 코드에 물리 휴리스틱 반영
+    - 슬라이싱 전에 작업면/Knife 확보 시퀀스 자동 삽입
+    - `Refrigerator/Drawer/Cabinet` 등 Openable 수신기에 PutObject 전 `OpenObject` 보장
+  - 코드 생성 단계에 자동 적용되어 실행 실패를 사전에 감소
+- 대화형 코얼리션(간략) 도입:
+  - `dialogue_coalition_formation(...)`: 태스크와 로봇 스킬을 바탕으로 LLM 한 턴 Reason→선정
+  - 실패 시 거리 기반 할당으로 폴백
+
+### v2.3 실행 엔진 안정화(동적 객체 추적/수신기 검증)
+- 동적 객체 추적 강화:
+  - `GoToObject`가 `Object|x|y|z` 형태의 전체 ID를 입력받아도, 실행 시점의 최신 메타데이터에서 현재 `objectId`/센터를 다시 조회하여 이동(정확 일치 → 이름 프리픽스 매칭 → 좌표 파싱 폴백).
+  - 객체가 이동(예: `PutObject`)한 뒤에도 최신 위치로 안정적으로 추적.
+- 수신기 배치 검증 로그:
+  - `PutObject` 후 `receptacleObjectIds`를 확인해 성공/실패와 내부 객체 목록을 출력.
+- 조작 함수 에러 핸들링 보강:
+  - `OpenObject/CloseObject/BreakObject/SliceObject` 등에서 대상 객체 미발견 시 안전 반환 및 원인 로그 출력.
+- 토글 로직 개선:
+  - `ToggleObjectOn/Off` 시 메타데이터 `toggleable/isToggled` 확인 및 Toaster 등 known-toggleable 허용.
+  - 이미 켜진/꺼진 상태에 대한 중복 토글 시도는 경고만 출력.
 
 ## 🤝 기여하기
 

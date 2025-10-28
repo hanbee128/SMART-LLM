@@ -397,11 +397,16 @@ def OpenObject(robot, sw_obj):
     agent_id = int(robot_name[-1]) - 1
     objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
     
+    sw_obj_id = None
     for obj in objs:
         match = re.match(sw_obj, obj)
         if match is not None:
             sw_obj_id = obj
             break # find the first instance
+    
+    if sw_obj_id is None:
+        print(f"❌ OpenObject: 객체를 찾을 수 없습니다: {sw_obj}")
+        return
     
     action_queue.append({'action':'OpenObject', 'objectId':sw_obj_id, 'agent_id':agent_id})
     
@@ -410,11 +415,16 @@ def CloseObject(robot, sw_obj):
     agent_id = int(robot_name[-1]) - 1
     objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
     
+    sw_obj_id = None
     for obj in objs:
         match = re.match(sw_obj, obj)
         if match is not None:
             sw_obj_id = obj
             break # find the first instance
+    
+    if sw_obj_id is None:
+        print(f"❌ CloseObject: 객체를 찾을 수 없습니다: {sw_obj}")
+        return
     
     action_queue.append({'action':'CloseObject', 'objectId':sw_obj_id, 'agent_id':agent_id}) 
     
@@ -423,11 +433,16 @@ def BreakObject(robot, sw_obj):
     agent_id = int(robot_name[-1]) - 1
     objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
     
+    sw_obj_id = None
     for obj in objs:
         match = re.match(sw_obj, obj)
         if match is not None:
             sw_obj_id = obj
             break # find the first instance
+    
+    if sw_obj_id is None:
+        print(f"❌ BreakObject: 객체를 찾을 수 없습니다: {sw_obj}")
+        return
     
     action_queue.append({'action':'BreakObject', 'objectId':sw_obj_id, 'agent_id':agent_id}) 
     
@@ -436,11 +451,16 @@ def SliceObject(robot, sw_obj):
     agent_id = int(robot_name[-1]) - 1
     objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
     
+    sw_obj_id = None
     for obj in objs:
         match = re.match(sw_obj, obj)
         if match is not None:
             sw_obj_id = obj
             break # find the first instance
+    
+    if sw_obj_id is None:
+        print(f"❌ SliceObject: 객체를 찾을 수 없습니다: {sw_obj}")
+        return
     
     action_queue.append({'action':'SliceObject', 'objectId':sw_obj_id, 'agent_id':agent_id})      
   
@@ -448,14 +468,19 @@ def CleanObject(robot, sw_obj):
     robot_name = robot['name']
     agent_id = int(robot_name[-1]) - 1
     objs = list(set([obj["objectId"] for obj in c.last_event.metadata["objects"]]))
-
+    
+    sw_obj_id = None
     for obj in objs:
         match = re.match(sw_obj, obj)
         if match is not None:
             sw_obj_id = obj
             break # find the first instance
 
-    action_queue.append({'action':'CleanObject', 'objectId':sw_obj_id, 'agent_id':agent_id}) 
+    if sw_obj_id is None:
+        print(f"❌ CleanObject: 객체를 찾을 수 없습니다: {sw_obj}")
+        return
+
+    action_queue.append({'action':'CleanObject', 'objectId':sw_obj_id, 'agent_id':agent_id})
  
 # LLM Generated Code
  

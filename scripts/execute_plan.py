@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 import subprocess
 import argparse
+import time
+import json
 
 def append_trans_ctr(allocated_plan):
     brk_ctr = 0
@@ -64,4 +66,38 @@ expt_name = args.command
 print (expt_name)
 ai_exec_file = compile_aithor_exec_file(expt_name)
 
-subprocess.run(["python3", ai_exec_file])
+# Run executable with heartbeat (alive/elapsed time)
+log_dir = os.path.join(os.getcwd(), "logs", expt_name)
+status_path = os.path.join(log_dir, "status.json")
+
+proc = subprocess.Popen(["python3", ai_exec_file])
+start_ts = time.time()
+last_beat = -1
+
+try:
+    while True:
+        rc = proc.poll()
+        elapsed = int(time.time() - start_ts)
+        # Print every 5s
+        if elapsed % 5 == 0 and elapsed != last_beat:
+            print(f"[RUN] alive | elapsed={elapsed}s | pid={proc.pid}")
+            # Write lightweight status file
+            try:
+                with open(status_path, 'w') as f:
+                    json.dump({
+                        "pid": proc.pid,
+                        "alive": rc is None,
+                        "elapsed_sec": elapsed,
+                        "updated_at": int(time.time())
+                    }, f)
+            except Exception:
+                pass
+            last_beat = elapsed
+        if rc is not None:
+            total = int(time.time() - start_ts)
+            print(f"[RUN] finished | elapsed={total}s | exit_code={rc}")
+            break
+        time.sleep(1)
+except KeyboardInterrupt:
+    proc.terminate()
+    print("[RUN] terminated by user")

@@ -374,10 +374,10 @@ Critic 피드백: {critic_response}
                     _, maker_response = LM(maker_prompt, maker_model, max_tokens=2000, frequency_penalty=0.0)
                 
                 # 수정된 코드 추출
-                corrected_code = extract_code_from_response(maker_response)
+                corrected_code = clean_generated_code(maker_response, available_robots_count)
                 if corrected_code:
                     old_length = len(current_code)
-                    current_code = clean_generated_code(corrected_code)
+                    current_code = corrected_code
                     new_length = len(current_code)
                     print(f"🛠️ LLM Maker: 코드 수정 완료 ({old_length} → {new_length} 문자)")
                     dialogue_history.append(f"Round {round_num + 1}: Critic → {critic_response} | Maker → 코드 수정 완료")
@@ -612,6 +612,14 @@ def clean_generated_code(code, available_robots_count=1):
     result = result.replace("'floorlamp'", "'Lamp'")
     result = result.replace("'floorLamp'", "'Lamp'")
     
+    # 주방 기본 객체 대소문자 표준화 (대소문자 무시 매칭)
+    result = re.sub(r"(?i)'bread'", "'Bread'", result)
+    result = re.sub(r"(?i)'toaster'", "'Toaster'", result)
+    # CounterTop 철자/대소문자 표준화 (Countertop/CounterTop/COUNTERTOP 등)
+    result = re.sub(r"(?i)'countertop'", "'CounterTop'", result)
+    # Knife 표준화
+    result = re.sub(r"(?i)'knife'", "'Knife'", result)
+
     # 존재하지 않는 객체들
     result = result.replace("'PowerButton'", "'Laptop'")  # PowerButton은 존재하지 않음
     result = result.replace("'powerbutton'", "'Laptop'")
@@ -643,6 +651,23 @@ def clean_generated_code(code, available_robots_count=1):
     # 액션 함수 이름 교정 (AI2-THOR 정확한 액션으로)
     result = result.replace("SwitchOn(", "ToggleObjectOn(")  # SwitchOn을 ToggleObjectOn으로 교정
     result = result.replace("SwitchOff(", "ToggleObjectOff(")  # SwitchOff를 ToggleObjectOff로 교정
+    
+    # 미정의 함수 제거
+    # WaitUntilObjectIsReady 같은 비표준 함수 호출 제거
+    result = re.sub(r"^.*WaitUntilObjectIsReady\(.*\)\s*$", "", result, flags=re.MULTILINE)
+    
+    # 항상 열려있는 수신기에 대한 OpenObject 호출 제거
+    result = re.sub(r"^.*OpenObject\([^,]+,\s*'CounterTop'\)\s*$", "", result, flags=re.MULTILINE)
+    result = re.sub(r"^.*OpenObject\([^,]+,\s*'Countertop'\)\s*$", "", result, flags=re.MULTILINE)
+    
+    # PutObject 시그니처 자동 교정
+    # ait hor_connect 환경에서는 PutObject(robot, recp) 형태이므로, (robot, obj, recp) -> (robot, recp)로 변환
+    def _fix_putobject_signature(m):
+        robot_expr = m.group(1)
+        recp_expr = m.group(3)
+        return f"PutObject({robot_expr}, {recp_expr})"
+    # 공백과 줄바꿈 허용 패턴
+    result = re.sub(r"PutObject\(\s*([^,\n]+)\s*,\s*([^,\n]+)\s*,\s*([^\)\n]+)\)", _fix_putobject_signature, result)
     
     # 로봇 수 검증 및 수정
     # 사용 가능한 로봇 수보다 많은 로봇을 요구하는 경우 수정
@@ -697,6 +722,102 @@ def clean_generated_code(code, available_robots_count=1):
         result = re.sub(r'robot_list\[3\]', 'robot_list[2]', result)
         result = re.sub(r'robot_list\[4\]', 'robot_list[2]', result)
     
+    return result
+
+def dialogue_coalition_formation(task_description, robots_list, model_name, available_robots_count_hint=1):
+    """로봇 간 대화 기반(간략) 코얼리션 형성. 실패 시 거리 기반으로 폴백.
+    NOTE: 실제 대화는 간결화하여 1턴 Reason→결정 형태로 구성.
+    """
+    try:
+        prompt = f"""
+당신은 다중 로봇 협업 코치입니다. 아래 로봇들의 이름/스킬을 참고해 주어진 태스크에 적합한 팀을 구성하고 간단히 근거를 제시하세요.
+
+TASK: {task_description}
+ROBOTS: {robots_list}
+요구사항:
+- 필요한 최소 인원으로 구성
+- 객체 조작/운반/컨테이너 열기/토글 등 필요한 스킬 보장
+- 짧은 근거 1-2줄 포함
+
+출력형식(JSON): {{"selected_names": ["robot1"], "rationale": "..."}}
+"""
+        if "gpt" in model_name.lower():
+            messages = [{"role": "user", "content": prompt}]
+            _, resp = LM(messages, model_name, max_tokens=300, frequency_penalty=0.0)
+        else:
+            _, resp = LM(prompt, model_name, max_tokens=300, frequency_penalty=0.0)
+
+        import json as _json
+        data = None
+        try:
+            data = _json.loads(resp.strip().split("\n")[0])
+        except Exception:
+            # 응답에 마크다운/텍스트가 섞인 경우 숫자/문자열만 추출 시도
+            import re as _re
+            m = _re.search(r"\{[\s\S]*\}", resp)
+            if m:
+                data = _json.loads(m.group(0))
+
+        if data and isinstance(data.get("selected_names"), list):
+            # 순서를 유지하며 중복 제거 후 힌트 개수만 사용
+            names = list(dict.fromkeys(data["selected_names"]))
+            names = names[:max(1, available_robots_count_hint)]
+            selected = [r for r in robots_list if r.get("name") in set(names)]
+            if selected:
+                print(f"🧩 코얼리션(대화 기반): {[r['name'] for r in selected]} | {data.get('rationale', '')}")
+                return selected
+    except Exception as e:
+        print(f"⚠️ 대화형 코얼리션 실패: {e}")
+
+    # 폴백: 거리 기반 1명 사용
+    return robots_list[:max(1, available_robots_count_hint)]
+
+def physical_cot_validate_code(code: str, available_objects: list, available_robots_count: int) -> str:
+    """물리 CoT 사전 검증/보정: 실행 전 물리 제약 휴리스틱을 코드에 반영.
+    - SliceObject 전에 Knife/작업면 확보
+    - Openable 수신기 PutObject 전 OpenObject 확보
+    - 잘못된 객체명/시그니처는 clean_generated_code에서 1차 정규화 후 보정
+    """
+    import re
+
+    result = code
+
+    # 객체명 집합 구성 (씬에 존재하는 타입들)
+    object_types = set([obj["name"] if isinstance(obj, dict) and "name" in obj else obj for obj in available_objects])
+
+    # 1) 슬라이싱 시퀀스 보강: SliceObject(...) 라인이 있는데 Knife 사용이 인접 맥락에 없으면 주입
+    def ensure_slicing_sequence(match):
+        line = match.group(0)
+        indent = re.match(r"(\s*)", line).group(1)
+        target_m = re.search(r"SliceObject\([^,]+,\s*'([^']+)'\)", line)
+        target = target_m.group(1) if target_m else 'Bread'
+        seq = (
+            f"{indent}GoToObject(robot_list[0], 'CounterTop')\n"
+            f"{indent}PutObject(robot_list[0], 'CounterTop')\n"
+            f"{indent}GoToObject(robot_list[0], 'Knife')\n"
+            f"{indent}PickupObject(robot_list[0], 'Knife')\n"
+            f"{indent}SliceObject(robot_list[0], '{target}')\n"
+            f"{indent}DropHandObject(robot_list[0])\n"
+        )
+        return seq
+
+    if 'SliceObject(' in result and 'Knife' not in result:
+        result = re.sub(r"^\s*SliceObject\([^\n]+\)\s*$", ensure_slicing_sequence, result, flags=re.MULTILINE)
+
+    # 2) Openable 수신기 보강: PutObject(robot, 'Refrigerator') 등은 사전 Open 필요
+    openable = ["Cabinet", "Drawer", "Refrigerator"]
+    for rec in openable:
+        # 이미 OpenObject 호출이 없다면 PutObject 앞에 추가
+        pattern_put = rf"^\s*PutObject\([^,]+,\s*'{re.escape(rec)}'\)\s*$"
+        if re.search(pattern_put, result, flags=re.MULTILINE):
+            pattern_open = rf"OpenObject\([^,]+,\s*'{re.escape(rec)}'\)"
+            if not re.search(pattern_open, result):
+                result = re.sub(pattern_put,
+                                 lambda m: f"OpenObject(robot_list[0], '{rec}')\n{m.group(0)}",
+                                 result,
+                                 count=1,
+                                 flags=re.MULTILINE)
+
     return result
 
 # Function returns object list with name and properties.
@@ -906,9 +1027,10 @@ if __name__ == "__main__":
     busy_robots_code = set()
     
     for i, (plan, solution) in enumerate(zip(decomposed_plan,allocated_plan)):
-        # 거리 기반으로 로봇 할당 (코드 생성용)
+        # 거리 기반 + 대화형 코얼리션(간략)으로 로봇 선택 (코드 생성용)
         task_description = test_tasks[i]
-        assigned_robots_code = assign_robots_by_distance(robots.robots, task_description, args.floor_plan, busy_robots_code)
+        coalition = dialogue_coalition_formation(task_description, robots.robots, args.model, available_robots_count_hint=1)
+        assigned_robots_code = coalition if coalition else assign_robots_by_distance(robots.robots, task_description, args.floor_plan, busy_robots_code)
         
         # 할당된 로봇들을 바쁜 로봇 목록에 추가
         for robot in assigned_robots_code:
@@ -1112,8 +1234,10 @@ Generate the code now:"""
             messages = [{"role": "system", "content": "You are a Robot Task Allocation Expert. Generate ONLY Python code using AI2Thor action functions. Follow the exact format provided in the user prompt. Do not include explanations, markdown, or any text other than the Python code. Use only the specified AI2Thor functions and include the function call at the end."},{"role": "user", "content": curr_prompt}]
             _, text = LM(messages, args.model, max_tokens=2000, frequency_penalty=0.4)
 
-        # 코드 후처리 적용
+        # 코드 후처리 적용(정규화)
         cleaned_text = clean_generated_code(text, len(assigned_robots_code))
+        # Physical CoT 사전 검증/보정 적용
+        cleaned_text = physical_cot_validate_code(cleaned_text, get_ai2_thor_objects(args.floor_plan), len(assigned_robots_code))
         
         # LLM Critic 검증 (비활성화되지 않은 경우에만)
         if not args.disable_critic:

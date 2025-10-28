@@ -95,6 +95,7 @@ objs = list([obj["objectId"] for obj in c.last_event.metadata["objects"]])
 action_queue = []
 
 task_over = False
+video_writer = None
 
 recp_id = None
 
@@ -384,8 +385,8 @@ def exec_actions():
             for i,e in enumerate(multi_agent_event.events):
                 agent_images.append(e.cv2img)
             
-            # Top view 이미지 수집 (저장하지 않음)
-            top_view_rgb = cv2.cvtColor(c.last_event.events[0].third_party_camera_frames[-1], cv2.COLOR_BGR2RGB)
+            # Top view 이미지 수집 (BGR 그대로 사용)
+            top_view_bgr = c.last_event.events[0].third_party_camera_frames[-1]
             
             # 모든 시각화를 하나의 창에 분할로 표시
             if agent_images:
@@ -407,7 +408,7 @@ def exec_actions():
                         cv2.putText(combined, f"Agent {i+1}", (x+10, y+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
                     elif i == len(agent_images) and len(agent_images) < 6:
                         # 마지막 위치에 Top View 배치
-                        combined[y:y+h, x:x+w] = top_view_rgb
+                        combined[y:y+h, x:x+w] = top_view_bgr
                         cv2.putText(combined, "Top View", (x+10, y+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
                         break
                     else:
@@ -415,12 +416,31 @@ def exec_actions():
                         combined[y:y+h, x:x+w] = np.zeros((h, w, 3), dtype=np.uint8)
                 
                 cv2.imshow('SMART-LLM Multi-Agent View', combined)
+                
+                # 통합 비디오 저장 초기화 및 프레임 기록
+                global video_writer
+                if video_writer is None:
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    # 로그 폴더에 저장 (executable_plan.py와 같은 디렉토리)
+                    out_dir = os.path.dirname(__file__) if '__file__' in globals() else os.getcwd()
+                    out_path = os.path.join(out_dir, 'combined_visualization.mp4')
+                    video_writer = cv2.VideoWriter(out_path, fourcc, 10.0, (combined.shape[1], combined.shape[0]))
+                if video_writer is not None and video_writer.isOpened():
+                    video_writer.write(combined)
             
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 break
             
             img_counter += 1    
             action_queue.pop(0)
+    
+    # 루프 종료 후 비디오 라이터 정리
+    try:
+        if video_writer is not None and video_writer.isOpened():
+            video_writer.release()
+            print("통합 비디오 저장 완료: 로그 폴더 내 combined_visualization.mp4")
+    except Exception as _:
+        pass
        
 actions_thread = threading.Thread(target=exec_actions)
 actions_thread.start()
@@ -451,10 +471,25 @@ def GoToObject(robots, dest_obj):
     dest_obj_center = None
     
     if "|" in dest_obj:
-        # 객체 ID가 이미 주어진 경우 (위치 정보 포함)
+        # 객체 ID가 이미 주어진 경우: 현재 메타데이터에서 최신 위치를 조회해야 함
         dest_obj_id = dest_obj
-        pos_arr = dest_obj_id.split("|")
-        dest_obj_center = {'x': float(pos_arr[1]), 'y': float(pos_arr[2]), 'z': float(pos_arr[3])}
+        # 1) 정확 일치 우선
+        for idx, obj in enumerate(objs):
+            if obj == dest_obj_id:
+                dest_obj_center = objs_center[idx]
+                break
+        # 2) 정확 일치 실패 시, 이름 프리픽스로 최신 ID 재탐색 (좌표 포함 ID가 변경될 수 있으므로)
+        if dest_obj_center is None:
+            name_prefix = dest_obj_id.split("|")[0]
+            for idx, obj in enumerate(objs):
+                if obj.startswith(name_prefix + "|"):
+                    dest_obj_id = obj
+                    dest_obj_center = objs_center[idx]
+                    break
+        # 3) 최종적으로도 못 찾으면 기존 문자열의 좌표를 파싱하여 사용(최후의 수단)
+        if dest_obj_center is None:
+            pos_arr = dest_obj_id.split("|")
+            dest_obj_center = {'x': float(pos_arr[1]), 'y': float(pos_arr[2]), 'z': float(pos_arr[3])}
     else:
         # 객체 이름으로 찾기
         min_distance = float('inf')
